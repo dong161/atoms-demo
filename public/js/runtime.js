@@ -248,9 +248,95 @@
     return report;
   }
 
+  // ---------- 点选元素（对应 Atoms 的 Design / Select to Chat） ----------
+  var picking = false;
+  var hoverEl = null;
+  function ensurePickStyle() {
+    if (document.getElementById('atoms-pick-style')) return;
+    var st = document.createElement('style');
+    st.id = 'atoms-pick-style';
+    st.textContent =
+      '.atoms-pick-hover{outline:2px solid #6d5efc!important;outline-offset:2px!important;cursor:crosshair!important}' +
+      '.atoms-pick-on,.atoms-pick-on *{cursor:crosshair!important}';
+    document.head.appendChild(st);
+  }
+  function cssPath(el) {
+    var parts = [];
+    while (el && el.nodeType === 1 && el !== document.body && parts.length < 6) {
+      if (el.id && /^[A-Za-z][\w-]*$/.test(el.id)) {
+        parts.unshift('#' + el.id);
+        break;
+      }
+      var tag = el.tagName.toLowerCase();
+      var parent = el.parentElement;
+      if (parent) {
+        var same = Array.prototype.filter.call(parent.children, function (c) {
+          return c.tagName === el.tagName;
+        });
+        if (same.length > 1) tag += ':nth-of-type(' + (same.indexOf(el) + 1) + ')';
+      }
+      parts.unshift(tag);
+      el = parent;
+    }
+    return parts.join(' > ');
+  }
+  function setHover(el) {
+    if (hoverEl) hoverEl.classList.remove('atoms-pick-hover');
+    hoverEl = el;
+    if (hoverEl) hoverEl.classList.add('atoms-pick-hover');
+  }
+  function stopPick() {
+    picking = false;
+    setHover(null);
+    document.documentElement.classList.remove('atoms-pick-on');
+  }
+  document.addEventListener(
+    'mouseover',
+    function (e) {
+      if (picking && e.target !== document.documentElement && e.target !== document.body) setHover(e.target);
+    },
+    true,
+  );
+  document.addEventListener(
+    'click',
+    function (e) {
+      if (!picking) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var el = e.target;
+      if (!el || el === document.documentElement || el === document.body) return;
+      el.classList.remove('atoms-pick-hover');
+      var html = el.outerHTML.replace(/\s+/g, ' ');
+      post({
+        type: 'picked',
+        target: {
+          selector: cssPath(el),
+          tag: el.tagName.toLowerCase(),
+          text: (el.innerText || el.value || '').trim().slice(0, 120),
+          html: html.length > 800 ? html.slice(0, 800) + '…' : html,
+        },
+      });
+      stopPick();
+    },
+    true,
+  );
+  document.addEventListener('keydown', function (e) {
+    if (picking && e.key === 'Escape') {
+      stopPick();
+      post({ type: 'pick-cancelled' });
+    }
+  });
+
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || m.__atoms !== INIT.channel) return;
+    if (m.type === 'pick') {
+      if (m.on) {
+        ensurePickStyle();
+        picking = true;
+        document.documentElement.classList.add('atoms-pick-on');
+      } else stopPick();
+    }
     if (m.type === 'probe')
       runProbe().then(function (r) {
         post({ type: 'probe-result', report: r });

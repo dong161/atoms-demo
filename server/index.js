@@ -6,6 +6,7 @@ const dummySalt = crypto.randomBytes(16).toString('hex');
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { generationOptions } from './generation-options.js';
+import { parseTarget, parseErrors, editHint } from './edit-context.js';
 import { openDb } from './db.js';
 import { llmConfig } from './llm.js';
 import { JobHub, runRace, adoptEntry, createVersion, addMessage, newId } from './jobs.js';
@@ -225,9 +226,9 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     return list.slice(0, MAX_MODELS);
   }
 
-  function startJob(project, instruction, mode, models) {
+  function startJob(project, instruction, mode, models, hint = '') {
     const job = hub.create(project.id);
-    runRace({ db, hub, cfg, job, project, instruction, mode, models }).catch((e) => console.error('runRace', e));
+    runRace({ db, hub, cfg, job, project, instruction, hint, mode, models }).catch((e) => console.error('runRace', e));
     return job;
   }
 
@@ -329,7 +330,10 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     wrap(async (req, res) => {
       const p = await ownProject(req, res);
       if (!p) return;
-      const text = String(req.body?.text || '').trim();
+      const target = parseTarget(req.body?.target);
+      const errors = parseErrors(req.body?.fixErrors);
+      // 一键修复可以不写文字；点选元素后必须说明要怎么改
+      const text = String(req.body?.text || '').trim() || (errors.length ? `修复预览中的 ${errors.length} 个运行错误` : '');
       if (!text) return res.status(400).json({ error: '请输入修改要求' });
       if (hub.activeFor(p.id)) return res.status(409).json({ error: '上一个任务还在进行中，请稍候或先停止' });
       if (!p.current_version_id) return res.status(409).json({ error: '还没有可修改的版本，请先采用一个候选' });
@@ -344,8 +348,12 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
         p.attachments,
         p.id,
       ]);
-      const message = await addMessage(db, p.id, 'user', 'text', text);
-      const job = startJob(p, text, 'edit', pickModels(req.body?.models));
+      const meta =
+        target || errors.length
+          ? { target: target ? { tag: target.tag, text: target.text } : undefined, fixErrors: errors.length || undefined }
+          : undefined;
+      const message = await addMessage(db, p.id, 'user', 'text', text, meta);
+      const job = startJob(p, text, 'edit', pickModels(req.body?.models), editHint({ target, errors }));
       res.json({ message, jobId: job.id });
     }),
   );
@@ -476,6 +484,39 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
         restoredFrom: v.seq,
       });
       res.json({ version: { id: nv.id, seq: nv.seq, title: nv.title }, message });
+    }),
+  );
+
+  // Remix：从任意版本复制出一个独立的新项目（可选连同应用数据），原项目不受影响
+  app.post(
+    '/api/versions/:id/remix',
+    wrap(auth),
+    wrap(async (req, res) => {
+      const v = await ownedVersion(req, res);
+      if (!v) return;
+      if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
+      const src = await db.get('SELECT * FROM projects WHERE id = $1', [v.project_id]);
+      const t = Date.now();
+      const id = newId();
+      const title = `${src.title}（Remix）`.slice(0, 40);
+      await db.run(
+        'INSERT INTO projects (id, user_id, title, prompt, plan, created_at, updated_at, theme_id, attachments) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [id, req.user.id, title, src.prompt, src.plan, t, t, src.theme_id, src.attachments],
+      );
+      const nv = await createVersion(db, { projectId: id, html: v.html, model: v.model, source: 'remix', score: v.score, title: v.title });
+      await addMessage(db, id, 'system', 'version', `Version 1: 从「${src.title}」Version ${v.seq} Remix 而来`, {
+        versionId: nv.id,
+        seq: nv.seq,
+        title: nv.title,
+        remixedFrom: { projectId: src.id, title: src.title, seq: v.seq },
+      });
+      if (req.body?.copyData) {
+        const rows = await db.all("SELECT k, v FROM app_kv WHERE project_id = $1 AND scope = 'owner'", [src.id]);
+        for (const r of rows) {
+          await db.run('INSERT INTO app_kv (project_id, scope, k, v, updated_at) VALUES ($1,$2,$3,$4,$5)', [id, 'owner', r.k, r.v, t]);
+        }
+      }
+      res.json({ project: { id, title } });
     }),
   );
 

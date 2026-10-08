@@ -31,7 +31,7 @@ const newChannel = () => Math.random().toString(36).slice(2) + Date.now().toStri
  * 在 container 里挂一个可交互预览。
  * kv: { load(): Promise<object>, save({set, del}): Promise }，不传则数据只在内存里。
  */
-export async function mountPreview(container, html, { kv, onConsole, onReady } = {}) {
+export async function mountPreview(container, html, { kv, onConsole, onReady, onPicked } = {}) {
   container.innerHTML = '';
   const channel = newChannel();
   let data = {};
@@ -55,6 +55,8 @@ export async function mountPreview(container, html, { kv, onConsole, onReady } =
       onConsole?.({ level: m.level, text: m.text });
     } else if (m.type === 'ready') {
       onReady?.();
+    } else if (m.type === 'picked' || m.type === 'pick-cancelled') {
+      onPicked?.(m.type === 'picked' ? m.target : null);
     }
   };
   window.addEventListener('message', handler);
@@ -62,6 +64,10 @@ export async function mountPreview(container, html, { kv, onConsole, onReady } =
   container.appendChild(iframe);
   return {
     iframe,
+    /** 进入/退出点选元素模式 */
+    setPick(on) {
+      iframe.contentWindow?.postMessage({ __atoms: channel, type: 'pick', on: !!on }, '*');
+    },
     destroy() {
       window.removeEventListener('message', handler);
       iframe.remove();

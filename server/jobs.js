@@ -121,12 +121,13 @@ export async function adoptEntry(db, entryId) {
 /**
  * 跑一场赛马。mode = 'create'（首轮，先由 Mike 出方案）| 'edit'（在当前版本上修改）。
  */
-export async function runRace({ db, hub, cfg, job, project, instruction, mode, models }) {
+export async function runRace({ db, hub, cfg, job, project, instruction, hint = '', mode, models }) {
   const files = JSON.parse(project.attachments || '[]');
   const themeId = project.theme_id || 'default';
   const prompt = referencePrompt(project.prompt, files);
   // 附件只发给模型；对话消息、赛马标题和验收清单保留用户的原话
-  const modelInstruction = referencePrompt(instruction, files);
+  // hint：点选元素、控制台报错等附加上下文，同样只发给模型
+  const modelInstruction = referencePrompt(instruction + hint, files);
   const signal = job.ctrl.signal;
   const emit = (type, data) => hub.emit(job, type, data);
   const say = async (role, kind, content, meta) => {

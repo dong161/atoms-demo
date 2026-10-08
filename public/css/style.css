@@ -2351,3 +2351,51 @@ details.review li.miss {
     flex-wrap: wrap;
   }
 }
+
+/* ---------- 点选修改 / 一键修复 / Remix ---------- */
+.target-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 13px;
+}
+.target-chip span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.target-chip .icon-btn {
+  width: 24px;
+  height: 24px;
+  color: var(--primary);
+}
+.msg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin-bottom: 4px;
+}
+#vt-fix {
+  color: var(--err);
+  border-color: #f8c9c9;
+  background: #fff5f5;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}

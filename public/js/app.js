@@ -101,6 +101,11 @@ const ICONS = {
   download:
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>',
   race: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
+  pick: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg>',
+  wrench:
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
+  remix:
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg>',
   eraser:
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 20H9L4 15l10-10 7 7-6 6M8 11l6 6"/></svg>',
 };
@@ -732,7 +737,13 @@ function renderChat() {
 function renderMessage(m) {
   const ws = state.ws;
   if (m.role === 'user') {
-    return `<div class="msg user"><div class="body"><div class="bubble">${esc(m.content)}</div></div></div>`;
+    const t = m.meta?.target;
+    const chip = t
+      ? `<div class="msg-chip">${ICONS.pick} 选中元素 &lt;${esc(t.tag)}&gt;${t.text ? ` “${esc(t.text.slice(0, 24))}”` : ''}</div>`
+      : m.meta?.fixErrors
+        ? `<div class="msg-chip">${ICONS.wrench} 附带 ${m.meta.fixErrors} 条报错</div>`
+        : '';
+    return `<div class="msg user"><div class="body">${chip}<div class="bubble">${esc(m.content)}</div></div></div>`;
   }
   const who = AGENTS[m.role] || AGENTS.system;
   const head = `<div class="who"><b>${who.name}</b>${who.role ? ` · ${who.role}` : ''} · ${fmtTime(m.created_at)}</div>`;
@@ -797,8 +808,19 @@ function renderComposer() {
   ws.generation ??= readComposerOptions(ws.data.project);
   const options = ws.generation;
   const old = $('#chat-input')?.value ?? ws.draft ?? '';
+  const target = ws.target;
+  const placeholder = !canEdit
+    ? '等第一个版本生成后，就可以在这里继续修改'
+    : target
+      ? '说说这个元素要怎么改，例如：改成圆角绿色按钮，文字换成「开始专注」'
+      : '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮';
   form.innerHTML = `
-    <textarea id="chat-input" rows="2" maxlength="2000" placeholder="${canEdit ? '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮' : '等第一个版本生成后，就可以在这里继续修改'}" ${canEdit ? '' : 'disabled'}></textarea>
+    ${
+      target
+        ? `<div class="target-chip">${ICONS.pick}<span>只修改选中的 <b>&lt;${esc(target.tag)}&gt;</b>${target.text ? ` “${esc(target.text.slice(0, 30))}”` : ''}</span><button type="button" class="icon-btn" id="target-clear" title="取消选择">✕</button></div>`
+        : ''
+    }
+    <textarea id="chat-input" rows="2" maxlength="2000" placeholder="${placeholder}" ${canEdit ? '' : 'disabled'}></textarea>
     <div class="bar">
       <div class="composer-left" id="chat-race"></div>
       ${
@@ -824,6 +846,11 @@ function renderComposer() {
     notify: toast,
   });
   bindRaceControls(slot, renderComposer);
+  $('#target-clear') &&
+    ($('#target-clear').onclick = () => {
+      ws.target = null;
+      renderComposer();
+    });
   $('#stop-btn') &&
     ($('#stop-btn').onclick = async () => {
       try {
@@ -838,7 +865,11 @@ function renderComposer() {
     const text = ta.value.trim();
     if (!text || running) return;
     try {
-      const r = await api(`/api/projects/${ws.id}/messages`, { method: 'POST', body: { text, models: raceModels(), ...options } });
+      const r = await api(`/api/projects/${ws.id}/messages`, {
+        method: 'POST',
+        body: { text, models: raceModels(), ...options, ...(ws.target ? { target: ws.target } : {}) },
+      });
+      ws.target = null;
       ws.draft = '';
       ta.value = '';
       ws.data.messages.push(r.message);
@@ -1033,7 +1064,7 @@ async function renderPreview(box) {
     label = `Version ${ver.seq} · ${esc(ver.title)}${ver.model ? ` · ${esc(modelLabel(ver.model))}` : ''}`;
     if (ver.id !== d.project.current_version_id) {
       banner = `<div class="viewer-banner">正在预览历史版本 Version ${ver.seq}（当前为 Version ${cur?.seq ?? '-'}）
-        <button class="btn sm" id="restore-btn">回退到此版本</button><button class="btn sm ghost" id="back-current">回到当前版本</button></div>`;
+        <button class="btn sm" id="restore-btn">回退到此版本</button><button class="btn sm" id="remix-btn">${ICONS.remix} Remix 成新项目</button><button class="btn sm ghost" id="back-current">回到当前版本</button></div>`;
     }
     kv = {
       load: async () => (await api(`/api/projects/${ws.id}/kv`)).data,
@@ -1055,6 +1086,12 @@ async function renderPreview(box) {
       <button class="icon-btn${ws.device === 'mobile' ? ' on' : ''}" data-device="mobile" title="手机视图">${ICONS.mobile}</button>
       <button class="icon-btn" id="vt-refresh" title="刷新预览">${ICONS.refresh}</button>
       <span class="label">${label}</span><span class="spacer"></span>
+      ${
+        v.type === 'version' && v.id === d.project.current_version_id
+          ? `<button class="btn sm ghost" id="vt-fix" hidden>${ICONS.wrench}<span>修复报错</span></button>
+      <button class="icon-btn${ws.picking ? ' on' : ''}" id="vt-pick" title="选择元素后，用对话只修改它">${ICONS.pick}</button>`
+          : ''
+      }
       ${
         v.type === 'version'
           ? `<button class="icon-btn" id="vt-reset" title="清空这个应用保存的数据">${ICONS.eraser}</button>
@@ -1096,6 +1133,16 @@ async function renderPreview(box) {
       }
     });
   $('#restore-btn') && ($('#restore-btn').onclick = () => restoreVersion(v.id));
+  $('#remix-btn') && ($('#remix-btn').onclick = () => remixVersion(v.id));
+  $('#vt-pick') &&
+    ($('#vt-pick').onclick = () => {
+      if (ws.jobId) return toast('等当前任务完成后再选择元素', true);
+      ws.picking = !ws.picking;
+      $('#vt-pick').classList.toggle('on', ws.picking);
+      ws.preview?.setPick(ws.picking);
+      if (ws.picking) toast('在预览里点一下要修改的元素（Esc 取消）');
+    });
+  $('#vt-fix') && ($('#vt-fix').onclick = fixErrors);
   $('#back-current') && ($('#back-current').onclick = () => setView({ type: 'version', id: d.project.current_version_id }));
   $('#back-race') && ($('#back-race').onclick = () => setView({ type: 'race', id: findEntry(v.id).race.id }));
   $('#adopt-btn') && ($('#adopt-btn').onclick = () => adopt(entryId));
@@ -1110,8 +1157,23 @@ async function renderPreview(box) {
   }
   if (ws.closed || ws.previewKey !== key) return;
   ws.consoleLines = [];
+  ws.picking = false;
   renderConsole();
-  ws.preview = await mountPreview($('#frame-wrap'), html, { kv, onConsole: pushConsole });
+  ws.preview = await mountPreview($('#frame-wrap'), html, {
+    kv,
+    onConsole: pushConsole,
+    onPicked: (target) => {
+      ws.picking = false;
+      $('#vt-pick')?.classList.remove('on');
+      if (!target) return;
+      ws.target = target;
+      ws.tab = 'chat';
+      document.querySelector('.ws-body')?.setAttribute('data-tab', 'chat');
+      document.querySelectorAll('.ws-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === 'chat'));
+      renderComposer();
+      $('#chat-input')?.focus();
+    },
+  });
 }
 
 function pushConsole(line) {
@@ -1119,6 +1181,7 @@ function pushConsole(line) {
   if (!ws) return;
   ws.consoleLines.push({ ...line, at: Date.now() });
   if (ws.consoleLines.length > 300) ws.consoleLines.shift();
+  updateFixButton();
   if (line.level === 'error' && !ws.consoleOpen) {
     const btn = $('#vt-console');
     const n = ws.consoleLines.filter((l) => l.level === 'error').length;
@@ -1126,6 +1189,35 @@ function pushConsole(line) {
   }
   renderConsole();
 }
+function updateFixButton() {
+  const ws = state.ws;
+  const btn = $('#vt-fix');
+  if (!btn || !ws) return;
+  const n = ws.consoleLines.filter((l) => l.level === 'error').length;
+  btn.hidden = !n || !!ws.jobId;
+  btn.querySelector('span').textContent = `让 Alex 修复 ${n} 个报错`;
+}
+
+// 一键修复（对应 Atoms 的 Resolve）：把预览控制台的报错交给 Alex
+async function fixErrors() {
+  const ws = state.ws;
+  const errors = [...new Set(ws.consoleLines.filter((l) => l.level === 'error').map((l) => l.text))].slice(0, 5);
+  if (!errors.length || ws.jobId) return;
+  try {
+    const r = await api(`/api/projects/${ws.id}/messages`, {
+      method: 'POST',
+      body: { fixErrors: errors, models: raceModels().slice(0, 1), ...(ws.generation || {}) },
+    });
+    ws.data.messages.push(r.message);
+    subscribe(r.jobId);
+    renderChat();
+    renderComposer();
+    toast('已交给 Alex 修复');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 function renderConsole() {
   const el = $('#console');
   if (!el || el.classList.contains('hidden')) return;
@@ -1353,6 +1445,37 @@ async function restoreVersion(versionId) {
   }
 }
 
+async function remixVersion(versionId) {
+  const ws = state.ws;
+  const v = ws.data.versions.find((x) => x.id === versionId);
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+    <h2>Remix Version ${v?.seq ?? ''}</h2>
+    <p>以这个版本为起点复制出一个独立的新项目，之后的修改不会影响当前项目。</p>
+    <label class="check-row"><input type="checkbox" id="remix-data" checked> 同时复制应用里已保存的数据</label>
+    <div class="row"><button class="btn" id="remix-cancel">取消</button><button class="btn primary" id="remix-go">创建新项目</button></div>
+  </div>`;
+  document.body.appendChild(mask);
+  const close = () => mask.remove();
+  mask.onclick = (e) => {
+    if (e.target === mask) close();
+  };
+  $('#remix-cancel', mask).onclick = close;
+  $('#remix-go', mask).onclick = async () => {
+    $('#remix-go', mask).disabled = true;
+    try {
+      const r = await api(`/api/versions/${versionId}/remix`, { method: 'POST', body: { copyData: $('#remix-data', mask).checked } });
+      close();
+      toast('已创建 Remix 项目');
+      location.hash = `#/p/${r.project.id}`;
+    } catch (e) {
+      toast(e.message, true);
+      $('#remix-go', mask).disabled = false;
+    }
+  };
+}
+
 async function renameProject() {
   const ws = state.ws;
   const title = prompt('项目名称', ws.data.project.title);
@@ -1444,8 +1567,9 @@ function renderDrawer() {
               (v) => `
       <div class="v-item${v.id === project.current_version_id ? ' current' : ''}" data-v="${v.id}">
         <span class="v-ico" style="width:32px;height:32px;border-radius:9px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px">V${v.seq}</span>
-        <div class="v-text"><b>${esc(v.title)}</b><span>${esc(v.source === 'restore' ? '回退' : modelLabel(v.model || ''))} · ${fmtTime(v.created_at)}${v.id === project.published_version_id ? ' · 已发布' : ''}</span></div>
+        <div class="v-text"><b>${esc(v.title)}</b><span>${esc(v.source === 'restore' ? '回退' : v.source === 'remix' ? 'Remix' : modelLabel(v.model || ''))} · ${fmtTime(v.created_at)}${v.id === project.published_version_id ? ' · 已发布' : ''}</span></div>
         ${v.id === project.current_version_id ? '<span class="badge primary">当前</span>' : ''}
+        <button class="icon-btn" data-remix="${v.id}" title="Remix 成新项目">${ICONS.remix}</button>
       </div>`,
             )
             .join('')
@@ -1456,6 +1580,13 @@ function renderDrawer() {
     ws.drawer = false;
     slot.remove();
   };
+  slot.querySelectorAll('[data-remix]').forEach(
+    (b) =>
+      (b.onclick = (e) => {
+        e.stopPropagation();
+        remixVersion(b.dataset.remix);
+      }),
+  );
   slot.querySelectorAll('[data-v]').forEach(
     (el) =>
       (el.onclick = () => {
