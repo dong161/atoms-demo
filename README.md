@@ -1,38 +1,41 @@
 # Atoms Demo
 
-用一句话描述需求，由智能体团队（Mike 拆解需求并验收，Alex 编码）驱动多个模型并行生成可运行的网页应用，在浏览器里实时查看、自动校验打分、择优采用，并支持对话迭代、版本回退和一键发布分享。
+用一句话描述想要的应用，由 AI 智能体团队（Mike 拆解需求并验收、Alex 编码）驱动**多个模型并行生成**可运行的网页应用；在浏览器沙箱里实时预览、**自动实测打分**、择优采用，再通过对话、点选元素、一键修复继续迭代，版本可回退、可 Remix，一键发布分享。
 
-- 在线地址：<https://atoms-demo-i0h8.onrender.com>
-- 代码仓库：<https://github.com/dong161/atoms-demo>
-- 详细设计与取舍：[docs/说明文档.md](docs/说明文档.md)
+- 在线体验：<https://atoms-demo-i0h8.onrender.com>
+- 不想等生成？直接用成品：[项目任务看板](https://atoms-demo-i0h8.onrender.com/s/Db5GK2OY) · [每日喝水打卡](https://atoms-demo-i0h8.onrender.com/s/doS6R8zF)
+- 设计说明（思路、取舍、完成度、扩展规划）：[docs/说明文档.md](docs/说明文档.md)
 
 ## 核心功能
 
 | 能力 | 说明 |
 | --- | --- |
-| 一句话生成应用 | 输入需求后，Mike 先产出开发说明（应用名、功能清单、设计、数据），Alex 据此生成单文件 HTML 应用 |
-| 多模型赛马 | 同一需求最多 3 路模型并行生成，界面实时显示各路进度与代码输出；也可关闭赛马只用单模型 |
-| 自动校验打分（满分 100） | 浏览器沙箱实测 50 分（渲染、无报错、交互、持久化、移动端）+ Mike 对照需求逐条验收 40 分 + 代码完整性 10 分 |
-| 应用查看器 | 沙箱 iframe 中可直接操作生成的应用；桌面/手机视图切换、刷新、Console 面板、新标签页打开 |
-| 对话迭代 | 在当前版本上继续提修改要求，修改同样可以赛马 |
-| 版本管理 | 每次采用或回退都生成新版本；回退是「复制旧版本为新版本」，历史不丢失 |
-| 数据持久化 | 生成应用里的 localStorage 自动同步到云端数据库，刷新、换设备都在 |
-| 发布与分享 | 一键发布得到 `/s/<slug>` 链接；每位访客的数据相互隔离；可「更新发布」 |
-| 账号与初始化 | 邮箱密码注册/登录（scrypt），保留昵称与恢复码；三步首次引导、错误反馈、可关闭弹窗 |
-| 稳定性 | 任务在服务端运行，刷新页面不中断、可续上进度；流中断/截断自动重试；单路失败不影响其它路 |
-| 演示模式 | 不配置模型时自动使用内置模板（看板 / 个人主页 / 房贷计算器），完整流程照样可体验 |
+| 一句话生成应用 | Mike 先把需求拆成开发说明（应用名、功能清单、设计、数据），Alex 据此生成单文件 HTML 应用 |
+| 多模型赛马 | 同一需求最多 3 路模型并行，实时显示每一路的进度与流式代码；可自选模型或关闭赛马 |
+| 自动校验打分（100 分） | 浏览器沙箱实测 50 分（渲染 / 报错 / 真实点击交互 / 持久化 / 375px 适配）+ Mike 逐条对照需求验收 40 分 + 代码完整性 10 分，推荐最优候选 |
+| 应用查看器 | 沙箱 iframe 中直接操作生成的应用；桌面/手机视图、刷新、Console、新标签页打开 |
+| 对话迭代 | 在当前版本上继续提修改，修改同样可以赛马 |
+| 点选修改 | 工具栏「选择元素」→ 在预览里点中某个元素 → 只修改它（对应 Atoms 的 Design / Select to Chat） |
+| 一键修复 | 预览出现运行报错时，「让 Alex 修复」把报错交给模型定位修复（对应 Atoms 的 Resolve） |
+| 版本与 Remix | 每次采用/回退都生成新版本；可预览、回退任意历史版本，或把它 Remix 成独立新项目（可选复制数据） |
+| 主题与附件 | 5 套主题真实影响生成应用的配色与样式；可上传 TXT / Markdown / JSON 需求文档作为参考 |
+| 数据持久化 | 生成应用的 localStorage 自动同步到云端数据库，刷新、换设备都在；同步失败自动重试 |
+| 发布与分享 | 一键发布 `/s/<slug>` 链接，每位访客的数据相互隔离；可更新发布、取消发布 |
+| 账号与初始化 | 邮箱 + 密码注册登录，或仅用昵称快速体验（恢复码换设备）；三步首次引导 |
+| 稳定性 | 任务在服务端运行，刷新/断网后自动续上；截断/中断自动重试；单路失败不影响其它路；无模型时演示模式兜底 |
 
 ## 3 分钟快速体验
 
-1. 打开在线地址，输入昵称点「开始使用」（无需密码或邮箱）。
-2. 点击示例「房贷计算器」，或自己写一句需求，保持「赛马模式」开启，点发送。
-3. 在左侧对话里看到 Mike 的需求拆解卡片；右侧赛马面板里能看到每一路模型的字数和代码流式输出（推理型模型会显示「思考中，已用时」）。
-4. 候选陆续完成后，会自动在沙箱里点击、填写并打分；展开「Mike 验收」可看到逐条需求是否满足。点「全屏试用」亲手操作，再点「采用此版本」。
-5. 在应用里新增一条数据并刷新页面，数据仍然在。
-6. 在对话框输入「主色换成蓝色」之类的修改要求，生成 Version 2；打开右上角「版本历史」，可预览并「回退到此版本」。
-7. 点「发布」复制链接，在无痕窗口打开：访客可直接使用，并拥有独立于你的数据。
+1. 打开在线地址，点「开始使用」：用邮箱注册，或选「仅用昵称快速体验」。
+2. 点一个示例（如「房贷计算器」）或自己写一句需求，保持赛马开启，发送。
+3. 左侧对话里看到 Mike 的需求拆解；右侧赛马面板实时显示每一路模型的代码输出。
+4. 完成后系统自动在沙箱里点击、填写、量尺寸并打分，展开「Mike 验收」看逐条需求是否满足。点「全屏试用」亲手操作，再「采用此版本」。
+5. 在应用里新增数据并刷新页面，数据仍在。
+6. 对话里输入「主色换成绿色」；或点工具栏「选择元素」，点中一个按钮，再说「改成圆角大按钮」。
+7. 「版本历史」里预览旧版本、回退，或 Remix 成新项目。
+8. 「发布」后用无痕窗口打开链接：访客可直接使用，数据独立于你。
 
-提示：线上模型生成一次通常需要一到几分钟，页面可以刷新或离开，回来后会自动续上。
+线上生成一次通常需要 1~3 分钟，期间可以刷新或离开页面，回来后会自动续上。
 
 ## 架构
 
@@ -40,16 +43,16 @@
 flowchart LR
   subgraph Browser["浏览器"]
     UI["app.js 工作台<br/>对话 / 赛马 / 版本 / 发布"]
-    Host["sandbox.js 预览宿主<br/>自动校验打分"]
-    Frame["sandbox iframe<br/>生成的应用 + runtime.js"]
+    Host["sandbox.js 预览宿主<br/>数据同步队列 / 自动校验"]
+    Frame["sandbox iframe（无同源、无弹窗、CSP 禁网）<br/>生成的应用 + runtime.js"]
     UI --> Host
-    Host <-->|postMessage| Frame
+    Host <-->|postMessage（逐字段校验）| Frame
   end
-  subgraph Server["Node.js 服务 (Express)"]
+  subgraph Server["Node.js 服务（Render）"]
     API["index.js<br/>REST + SSE"]
-    Jobs["jobs.js<br/>JobHub / runRace"]
+    Jobs["jobs.js<br/>JobHub / 赛马调度"]
     Agents["agents.js<br/>Mike 规划与验收 / Alex 编码"]
-    LLM["llm.js<br/>流式调用 / 重试 / 超时"]
+    LLM["llm.js<br/>流式 / 重试 / 截断识别"]
     DB["db.js<br/>Postgres 或 SQLite"]
     API --> Jobs --> Agents --> LLM
     API --> DB
@@ -57,104 +60,82 @@ flowchart LR
   end
   UI -->|HTTP / SSE| API
   Host -->|应用数据 kv| API
-  LLM -->|OpenAI 兼容 chat/completions| Model["模型网关 / 任意兼容接口"]
-  DB --> Store[("Neon Postgres<br/>或本地 SQLite")]
+  LLM -->|OpenAI 兼容接口| GW["模型网关（作者本机）<br/>经 Cloudflare 隧道"]
+  DB --> Store[("Neon Postgres")]
 ```
+
+一次生成的流程：`POST /api/projects` → 服务端创建任务 → Mike 拆解需求 → N 路 Alex 并行生成（SSE 实时推送进度）→ 每路完成后 Mike 对照需求验收 → 浏览器在离屏沙箱里实测打分 → 用户采用 → 生成版本。
 
 ## 技术栈
 
-- 后端：Node.js 22.5+、Express 4，依赖仅 `express` 与 `pg`
-- 数据库：线上 Postgres（Neon）；本地使用 Node 内置 `node:sqlite`，由同一个适配层 `server/db.js` 屏蔽差异
-- 前端：原生 ES Modules，无构建步骤、无框架
-- 实时通信：Server-Sent Events（SSE），支持断线后回放
-- 模型接入：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 测试：`node --test`（61 个用例）；CI 为 GitHub Actions
-- 部署：Render（Free）+ Neon
+- 后端：Node.js 22.5+、Express 4，运行时依赖只有 `express` 和 `pg`
+- 数据库：线上 Neon Postgres；本地默认用 Node 内置 `node:sqlite`，`server/db.js` 屏蔽差异
+- 前端：原生 ES Modules，无框架、无构建步骤
+- 实时：Server-Sent Events，令牌走请求头，断线续传
+- 模型：任意 OpenAI 兼容的 `/chat/completions` 流式接口
+- 质量：75 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行
+- 部署：Render 免费实例 + Neon；GitHub Actions 每 5 分钟保活
 
 ## 本地运行
 
-要求 Node.js 22.5 及以上。
+需要 Node.js 22.5 及以上。
 
 ```bash
 npm install
-cp .env.example .env   # 不填任何模型配置也能运行，自动进入演示模式
+cp .env.example .env   # 不填模型配置也能运行，自动进入演示模式
 npm start              # http://localhost:3100
-npm test               # 61 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
+npm test               # 75 个测试：内存 SQLite + mock 模型，不访问外部服务
+npm run format:check
 ```
 
-不配置 `LLM_*` 时为演示模式：流程完整可用（拆解、赛马、校验、采用、迭代、回退、发布），但生成结果来自 `server/mock/` 下的三个内置模板，修改也只支持换主色和深色模式。配置 `LLM_BASE_URL`、`LLM_MODELS` 后即使用真实模型。本地未设置 `DATABASE_URL` 时数据保存在 `data/atoms-demo.db`。
+不配置 `LLM_*` 时为演示模式：拆解、赛马、校验、采用、迭代、回退、发布全流程可用，生成结果来自 `server/mock/` 的三个内置模板。配置 `LLM_BASE_URL`、`LLM_MODELS` 后使用真实模型。未设置 `DATABASE_URL` 时数据保存在 `data/atoms-demo.db`。
 
 ## 环境变量
 
-| 变量 | 必填 | 说明 |
-| --- | --- | --- |
-| `PORT` | 否 | 监听端口，默认 `3100`（Render 会自动注入） |
-| `DATABASE_URL` | 线上必填 | Postgres 连接串；留空则使用本地 SQLite 文件 `data/atoms-demo.db` |
-| `LLM_BASE_URL` | 否 | OpenAI 兼容接口地址（到 `/v1` 为止），请求 `${LLM_BASE_URL}/chat/completions` |
-| `LLM_API_KEY` | 否 | 接口密钥，作为 Bearer 令牌发送 |
-| `LLM_MODELS` | 否 | 赛马可选模型，逗号分隔；前 3 个为默认赛马阵容 |
-| `LLM_PLANNER_MODEL` | 否 | Mike 拆解需求与验收所用模型，默认取 `LLM_MODELS` 的第一个 |
-| `MOCK_MODE` | 否 | 设为 `1` 强制演示模式；`LLM_BASE_URL` 或 `LLM_MODELS` 为空时也自动进入演示模式 |
-| `NODE_ENV` | 否 | 为 `production` 时不读取 `.env` 文件，其余情况启动时会尝试加载根目录 `.env` |
-
-`.env` 已在 `.gitignore` 中，请不要提交密钥。
+| 变量 | 说明 |
+| --- | --- |
+| `PORT` | 监听端口，默认 `3100`（Render 自动注入） |
+| `DATABASE_URL` | Postgres 连接串；留空用本地 SQLite |
+| `LLM_BASE_URL` | OpenAI 兼容接口地址（到 `/v1`） |
+| `LLM_API_KEY` | 接口密钥（Bearer） |
+| `LLM_MODELS` | 可选模型，逗号分隔；前 3 个为默认赛马阵容 |
+| `LLM_PLANNER_MODEL` | Mike 拆解与验收用的模型，默认取第一个 |
+| `MOCK_MODE` | 设为 `1` 强制演示模式 |
 
 ## 目录结构
 
 ```text
-.
-├── server/
-│   ├── index.js        Express 应用：账号、项目、任务事件流、版本、发布、应用数据 kv
-│   ├── jobs.js         任务调度：JobHub（事件缓冲与回放）、runRace（赛马）、采用与版本创建
-│   ├── agents.js       Mike（拆解 / 验收）与 Alex（编码）的提示词、解析与 mock 实现
-│   ├── llm.js          OpenAI 兼容流式客户端：超时、重试、截断识别
-│   ├── html.js         模型输出清洗（去围栏）与静态完整性检查
-│   ├── db.js           数据库适配层（Postgres / SQLite）与表结构
-│   └── mock/           演示模式的三个内置应用模板
-├── public/
-│   ├── index.html      工作台入口
-│   ├── share.html      发布页与所有者新标签预览页
-│   ├── css/style.css
-│   └── js/
-│       ├── app.js      前端主程序：账号、对话、赛马、预览、版本、发布
-│       ├── sandbox.js  预览宿主：注入运行时、数据同步、自动校验与评分
-│       └── runtime.js  注入生成应用内的运行时：localStorage 替身、报错收集、探针
-├── test/               agents / api / html / llm 四组测试
-├── docs/说明文档.md     实现思路、完成度与后续规划
-├── render.yaml         Render 部署配置
-└── .github/workflows/  test.yml（push 与 PR 跑测试）、keepalive.yml（每 10 分钟保活）
+server/
+  index.js            Express：账号、项目、任务事件流、版本、Remix、发布、应用数据、模型地址上报
+  jobs.js             JobHub（事件序号/回放/任务槽）、赛马调度、采用与版本号分配
+  agents.js           Mike（拆解/验收）与 Alex（编码）的提示词、解析、截断识别、mock 实现
+  llm.js              OpenAI 兼容流式客户端：超时、可取消重试、中断识别
+  edit-context.js     点选元素 / 控制台报错等修改上下文（只发给模型）
+  generation-options.js  主题与附件
+  html.js / db.js     输出清洗与静态检查 / 数据库适配层
+  mock/               演示模式模板
+public/
+  index.html, share.html（发布页与新标签预览）, css/, img/（AI 原创素材）
+  js/app.js           前端主程序
+  js/sandbox.js       预览宿主：注入运行时、数据同步队列、自动校验评分
+  js/runtime.js       注入生成应用的运行时：localStorage 替身、报错收集、点选、探针
+ops/model-gateway/    本机模型网关与隧道守护脚本（不含配置与密钥）
+test/                 75 个测试
+docs/                 说明文档、素材来源
 ```
 
 ## 部署
 
-线上环境为 Render 免费实例（Ohio）加 Neon Postgres（us-east-2）。
+1. Neon 创建数据库；服务启动时自动建表和增量迁移。
+2. Render 用 `render.yaml` 创建 Web Service（健康检查 `/api/health`，返回当前提交号），在控制台填写环境变量（`sync: false`，不进仓库）。
+3. 模型：作者本机的模型网关只放行对话补全与模型列表、模型白名单、独立令牌、并发上限，经 Cloudflare 临时隧道接入；守护脚本发现隧道地址变化后，凭网关令牌调用 `POST /api/admin/llm-endpoint` 自动更新线上配置。网关不可用时首轮生成用演示数据兜底，网站本身不受影响。详见 [ops/model-gateway](ops/model-gateway/README.md)。任何 OpenAI 兼容接口都可以替代它。
+4. Render 免费实例闲置 15 分钟会休眠，`.github/workflows/keepalive.yml` 每 5 分钟检查 `/api/health` 的 JSON 内容保活（GitHub 定时任务可能延迟，只能降低冷启动概率）。
 
-1. 在 Neon 创建数据库，取得连接串。启动时服务会自动建表（`CREATE TABLE IF NOT EXISTS`），无需手动迁移。
-2. 在 Render 通过 `render.yaml` 创建 Web Service（`npm ci` 构建、`npm start` 启动、健康检查 `/api/health`）。
-3. 在 Render 控制台填写 `DATABASE_URL`、`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODELS`、`LLM_PLANNER_MODEL`（这些变量在 `render.yaml` 中为 `sync: false`，不会进入仓库）。
-4. Render 免费实例闲置约 15 分钟会休眠，`.github/workflows/keepalive.yml` 每 10 分钟请求一次 `/api/health` 保活，同时作为可用性监控。如果 fork 本仓库，请把其中的域名改成自己的。
+## 安全设计
 
-线上模型通过作者本机的一个模型网关接入（只放行对话补全接口、限定模型白名单、独立令牌、并发上限），经隧道转发，上游服务不直接暴露；该网关不在本仓库内。任何 OpenAI 兼容接口都可以替代它。
+- 生成的代码运行在 `sandbox` iframe：无 `allow-same-origin`（读不到平台登录态）、无弹窗与顶层导航权限；注入 CSP 禁止一切网络请求；外链由宿主确认后打开。
+- 宿主对 iframe 发来的所有消息逐字段校验；日志等内容一律转义渲染。
+- 密码 scrypt 加盐；令牌只存 SHA-256；事件流令牌放请求头；注册/登录/生成/访客数据写入均限流。
+- 附件、点选元素、报错信息作为不可信参考资料传给模型，不出现在对话和验收清单里。
 
-## 文档
-
-实现思路、关键取舍、评分与安全设计、完成度和后续规划见 [docs/说明文档.md](docs/说明文档.md)。
-
-## 首页与账号更新（2026-10-09）
-
-首页角色头像、示例插画与主视觉均为本项目 AI 原创生成，自写渐变与悬浮动效、响应式布局及减少动态效果支持。来源与使用范围见 [素材来源](docs/素材来源.md)。
-
-真实邮箱密码接口：`POST /api/auth/register`（name/email/password）、`POST /api/auth/login`（email/password）。密码10–128字符，经随机盐scrypt存储；登录签发7天会话；注册恢复码及旧昵称令牌继续兼容。邮箱仅作为账号标识，**没有邮件验证、邮件找回、第三方登录**。旧库自动增加可空邮箱/密码字段及sessions表，迁移可重复执行。首次引导不自动调用模型。
-
-### GitHub 保活（2026-10-09）
-
-`.github/workflows/keepalive.yml` 每5分钟尽力访问 Render 的 `/api/health`，错开整点，保留手动触发并在保活配置变化时立即执行。脚本不仅检查HTTP成功，还要求JSON `ok=true`、数据库postgres；避免把Render返回HTTP200的唤醒页面误报健康。失败最多重试3次，单请求60秒、间隔10秒；任务5分钟超时，只读仓库权限。
-
-GitHub schedule可能延迟或丢弃，**不能保证永不休眠**。Render免费实例15分钟无流量会休眠，唤醒约1分钟；免费运行时数为工作区共享750小时/月。持续保活会消耗运行额度。可靠免冷启动需另选常驻服务方案，本项目未自动购买付费实例。
-
-### 主题与文本附件
-- 输入框加号包含真实的文本附件和赛马/模型设置；主题提供自由创作、静谧自然、陶土暖色、极简黑白、清透蓝色。
-- 主题用于下次创建或修改生成应用，进入工程模型系统提示并补充确定性的 CSS，不改变原有业务逻辑和存储键。
-- TXT/Markdown/JSON 按参考文本读取；最多 3 个，每个最多 8000 字符且 32KB，总计最多 16000 字符且 64KB。不支持图片/PDF。附件会发送给模型，不要上传密码、密钥或敏感信息。
-- 创建/修改接口接受 `themeId` 和 `attachments: [{name,text}]`；项目保存 `theme_id`、`attachments`。修改不传这两个字段则继承，传空附件数组则清除。旧数据库使用增量迁移。
-- 首页选项保存在当前浏览器会话，项目内选项持久化在数据库；主题选择仅在下次提交生效。附件作为不可信参考资料编码传入，不赋予系统指令权限。
+更多取舍与已知局限见 [docs/说明文档.md](docs/说明文档.md)；素材来源见 [docs/素材来源.md](docs/素材来源.md)。
