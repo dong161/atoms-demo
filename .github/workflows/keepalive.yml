@@ -1,0 +1,19 @@
+# Render 免费实例闲置 15 分钟会休眠，首次访问要等近 1 分钟。
+# 每 10 分钟访问一次健康检查，保持在线；同时作为线上可用性监控。
+name: keepalive
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /api/health
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS -m 90 https://atoms-demo-i0h8.onrender.com/api/health; then exit 0; fi
+            sleep 10
+          done
+          exit 1
