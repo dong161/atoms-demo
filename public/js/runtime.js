@@ -7,7 +7,11 @@
   var probeMode = INIT.mode === 'probe';
   function post(msg) {
     msg.__atoms = INIT.channel;
-    try { parent.postMessage(msg, '*'); } catch (e) { /* ignore */ }
+    try {
+      parent.postMessage(msg, '*');
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   // ---------- localStorage 替身 ----------
@@ -17,43 +21,90 @@
   var timer = null;
   function flush() {
     timer = null;
-    var set = pending.set, del = Object.keys(pending.del);
+    var set = pending.set,
+      del = Object.keys(pending.del);
     pending = { set: {}, del: {} };
     if (!probeMode && (Object.keys(set).length || del.length)) post({ type: 'kv', set: set, del: del });
   }
-  function queue() { if (!timer) timer = setTimeout(flush, 300); }
+  function queue() {
+    if (!timer) timer = setTimeout(flush, 300);
+  }
   function makeStore(persist) {
     var map = persist ? data : new Map();
     return {
-      getItem: function (k) { stats.reads++; k = String(k); return map.has(k) ? map.get(k) : null; },
+      getItem: function (k) {
+        stats.reads++;
+        k = String(k);
+        return map.has(k) ? map.get(k) : null;
+      },
       setItem: function (k, v) {
-        k = String(k); v = String(v); map.set(k, v);
-        if (persist) { stats.writes++; pending.set[k] = v; delete pending.del[k]; queue(); }
+        k = String(k);
+        v = String(v);
+        map.set(k, v);
+        if (persist) {
+          stats.writes++;
+          pending.set[k] = v;
+          delete pending.del[k];
+          queue();
+        }
       },
       removeItem: function (k) {
-        k = String(k); map.delete(k);
-        if (persist) { stats.writes++; pending.del[k] = 1; delete pending.set[k]; queue(); }
+        k = String(k);
+        map.delete(k);
+        if (persist) {
+          stats.writes++;
+          pending.del[k] = 1;
+          delete pending.set[k];
+          queue();
+        }
       },
       clear: function () {
-        if (persist) { map.forEach(function (_, k) { pending.del[k] = 1; }); pending.set = {}; stats.writes++; queue(); }
+        if (persist) {
+          map.forEach(function (_, k) {
+            pending.del[k] = 1;
+          });
+          pending.set = {};
+          stats.writes++;
+          queue();
+        }
         map.clear();
       },
-      key: function (i) { return Array.from(map.keys())[i] || null; },
-      get length() { return map.size; },
+      key: function (i) {
+        return Array.from(map.keys())[i] || null;
+      },
+      get length() {
+        return map.size;
+      },
     };
   }
   var local = makeStore(true);
   var session = makeStore(false);
   try {
-    Object.defineProperty(window, 'localStorage', { configurable: true, get: function () { return local; } });
-    Object.defineProperty(window, 'sessionStorage', { configurable: true, get: function () { return session; } });
-  } catch (e) { /* 极少数浏览器不允许覆盖，忽略 */ }
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get: function () {
+        return local;
+      },
+    });
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      get: function () {
+        return session;
+      },
+    });
+  } catch (e) {
+    /* 极少数浏览器不允许覆盖，忽略 */
+  }
   window.addEventListener('pagehide', flush);
 
   // ---------- 报错与日志 ----------
   var errors = [];
   function fmt(a) {
-    try { return typeof a === 'string' ? a : a instanceof Error ? a.message : JSON.stringify(a); } catch (e) { return String(a); }
+    try {
+      return typeof a === 'string' ? a : a instanceof Error ? a.message : JSON.stringify(a);
+    } catch (e) {
+      return String(a);
+    }
   }
   window.addEventListener('error', function (e) {
     var m = (e.message || '脚本错误') + (e.lineno ? ' (行 ' + e.lineno + ')' : '');
@@ -84,13 +135,19 @@
     e.preventDefault();
     if (!probeMode) window.open(a.href, '_blank', 'noopener');
   });
-  window.addEventListener('submit', function (e) { e.preventDefault(); });
+  window.addEventListener('submit', function (e) {
+    e.preventDefault();
+  });
 
   // ---------- 自动校验探针 ----------
   if (probeMode) {
     window.alert = function () {};
-    window.confirm = function () { return true; };
-    window.prompt = function () { return '测试'; };
+    window.confirm = function () {
+      return true;
+    };
+    window.prompt = function () {
+      return '测试';
+    };
   }
 
   function visible(el) {
@@ -113,7 +170,11 @@
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
-  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function wait(ms) {
+    return new Promise(function (r) {
+      setTimeout(r, ms);
+    });
+  }
 
   async function runProbe() {
     var body = document.body || document.documentElement;
@@ -122,35 +183,59 @@
       elements: body.querySelectorAll('*').length,
       initialErrors: errors.length,
     };
-    var inputs = Array.prototype.filter.call(
-      document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]), textarea'),
-      visible,
-    ).slice(0, 6);
-    inputs.forEach(function (el) { if (!el.disabled && !el.readOnly) { try { setValue(el, sampleFor(el)); } catch (e) { /* ignore */ } } });
+    var inputs = Array.prototype.filter
+      .call(
+        document.querySelectorAll(
+          'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]), textarea',
+        ),
+        visible,
+      )
+      .slice(0, 6);
+    inputs.forEach(function (el) {
+      if (!el.disabled && !el.readOnly) {
+        try {
+          setValue(el, sampleFor(el));
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    });
     report.inputs = inputs.length;
 
     var clickable = Array.prototype.filter.call(
-      document.querySelectorAll('button, [role=button], input[type=checkbox], input[type=radio], input[type=submit], select, a[href^="#"], [onclick]'),
-      function (el) { return visible(el) && !el.disabled; },
+      document.querySelectorAll(
+        'button, [role=button], input[type=checkbox], input[type=radio], input[type=submit], select, a[href^="#"], [onclick]',
+      ),
+      function (el) {
+        return visible(el) && !el.disabled;
+      },
     );
     report.interactive = clickable.length;
     var writesBefore = stats.writes;
-    var responsive = 0, tried = 0;
+    var responsive = 0,
+      tried = 0;
     for (var i = 0; i < clickable.length && tried < 8; i++) {
       var el = clickable[i];
       if (!el.isConnected) continue;
       tried++;
       var changed = 0;
-      var mo = new MutationObserver(function (list) { changed += list.length; });
+      var mo = new MutationObserver(function (list) {
+        changed += list.length;
+      });
       mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
       var before = (document.body.innerText || '').length;
       try {
         if (el.tagName === 'SELECT') {
-          if (el.options.length > 1) { el.selectedIndex = (el.selectedIndex + 1) % el.options.length; el.dispatchEvent(new Event('change', { bubbles: true })); }
+          if (el.options.length > 1) {
+            el.selectedIndex = (el.selectedIndex + 1) % el.options.length;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
         } else {
           el.click();
         }
-      } catch (e) { errors.push('点击出错：' + e.message); }
+      } catch (e) {
+        errors.push('点击出错：' + e.message);
+      }
       await wait(160);
       mo.disconnect();
       if (changed > 0 || (document.body.innerText || '').length !== before) responsive++;
@@ -166,12 +251,22 @@
   window.addEventListener('message', function (e) {
     var m = e.data;
     if (!m || m.__atoms !== INIT.channel) return;
-    if (m.type === 'probe') runProbe().then(function (r) { post({ type: 'probe-result', report: r }); });
+    if (m.type === 'probe')
+      runProbe().then(function (r) {
+        post({ type: 'probe-result', report: r });
+      });
     if (m.type === 'measure') {
       var de = document.documentElement;
-      post({ type: 'measure-result', overflow: de.scrollWidth > window.innerWidth + 2, scrollWidth: de.scrollWidth, width: window.innerWidth });
+      post({
+        type: 'measure-result',
+        overflow: de.scrollWidth > window.innerWidth + 2,
+        scrollWidth: de.scrollWidth,
+        width: window.innerWidth,
+      });
     }
   });
 
-  window.addEventListener('load', function () { post({ type: 'ready' }); });
+  window.addEventListener('load', function () {
+    post({ type: 'ready' });
+  });
 })();

@@ -20,8 +20,16 @@ export async function planProject({ cfg, prompt, signal, onDelta }) {
   if (cfg.mockOnly) return { ...mockPlan(prompt), source: 'mock' };
   try {
     const raw = await streamChatWithRetry({
-      cfg, model: cfg.plannerModel, signal, temperature: 0.4, maxTokens: 1200, onDelta,
-      messages: [{ role: 'system', content: PLANNER_SYSTEM }, { role: 'user', content: prompt }],
+      cfg,
+      model: cfg.plannerModel,
+      signal,
+      temperature: 0.4,
+      maxTokens: 1200,
+      onDelta,
+      messages: [
+        { role: 'system', content: PLANNER_SYSTEM },
+        { role: 'user', content: prompt },
+      ],
     });
     const plan = parsePlan(raw);
     if (plan) return { ...plan, source: cfg.plannerModel };
@@ -77,7 +85,10 @@ function createMessages(plan, prompt) {
 
 function editMessages(baseHtml, instruction) {
   return [
-    { role: 'system', content: `你是 Atoms 团队的工程师 Alex。用户会给你一个现有的单文件网页应用和修改要求。在原有基础上修改，保留没要求改动的功能、数据结构和 localStorage 键名。\n${ENGINEER_RULES}` },
+    {
+      role: 'system',
+      content: `你是 Atoms 团队的工程师 Alex。用户会给你一个现有的单文件网页应用和修改要求。在原有基础上修改，保留没要求改动的功能、数据结构和 localStorage 键名。\n${ENGINEER_RULES}`,
+    },
     { role: 'user', content: `现有代码：\n${baseHtml}\n\n修改要求：${instruction}\n\n输出修改后的完整 HTML。` },
   ];
 }
@@ -86,11 +97,25 @@ function editMessages(baseHtml, instruction) {
  * 生成一个候选结果。mode=create 用 plan 从零写；mode=edit 在 baseHtml 上改。
  * 返回 { html, source }，source 为实际使用的模型名或 'mock'。
  */
-export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, instruction, variant = 0, signal, onDelta, onRetry, onReset, themeId = 'default' }) {
+export async function engineerBuild({
+  cfg,
+  model,
+  mode,
+  plan,
+  prompt,
+  baseHtml,
+  instruction,
+  variant = 0,
+  signal,
+  onDelta,
+  onRetry,
+  onReset,
+  themeId = 'default',
+}) {
   if (cfg.mockOnly || model === 'mock') {
     const html = mode === 'edit' ? mockEdit(baseHtml, instruction) : mockCreate(prompt, plan, variant);
     await fakeStream(html, onDelta, signal);
-    return { html:applyTheme(html,themeId), source: 'mock' };
+    return { html: applyTheme(html, themeId), source: 'mock' };
   }
   const messages = mode === 'edit' ? editMessages(baseHtml, instruction) : createMessages(plan, prompt);
   messages[0].content += themeInstruction(themeId);
@@ -98,15 +123,24 @@ export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, 
   let lastProblem = '';
   // 输出被截断/不完整时整段重来一次（最多 2 次尝试）
   for (let attempt = 1; attempt <= 2; attempt++) {
-    if (attempt > 1) { onRetry?.(new Error(lastProblem), attempt - 1); onReset?.(); }
+    if (attempt > 1) {
+      onRetry?.(new Error(lastProblem), attempt - 1);
+      onReset?.();
+    }
     const raw = await streamChatWithRetry({
-      cfg, model, messages, signal, onDelta, onRetry, onReset,
+      cfg,
+      model,
+      messages,
+      signal,
+      onDelta,
+      onRetry,
+      onReset,
       temperature: 0.6 + (variant % 3) * 0.1,
       maxTokens: 24000,
     });
     const html = extractHtml(raw);
     lastProblem = htmlProblem(html, needScript);
-    if (!lastProblem) return { html:applyTheme(html,themeId), source: model };
+    if (!lastProblem) return { html: applyTheme(html, themeId), source: model };
     if (signal?.aborted) break;
   }
   throw new Error(`生成结果不完整：${lastProblem}`);
@@ -138,11 +172,19 @@ export function reviewChecklist({ mode, plan, instruction }) {
 export async function reviewBuild({ cfg, html, checklist, signal }) {
   if (!checklist.length) return null;
   if (cfg.mockOnly) {
-    return { source: 'mock', summary: '演示模式：未调用模型验收，默认视为全部满足', results: checklist.map((f) => ({ feature: f, ok: true, note: '演示模式' })) };
+    return {
+      source: 'mock',
+      summary: '演示模式：未调用模型验收，默认视为全部满足',
+      results: checklist.map((f) => ({ feature: f, ok: true, note: '演示模式' })),
+    };
   }
   try {
     const raw = await streamChatWithRetry({
-      cfg, model: cfg.plannerModel, signal, temperature: 0.1, maxTokens: 1500,
+      cfg,
+      model: cfg.plannerModel,
+      signal,
+      temperature: 0.1,
+      maxTokens: 1500,
       messages: [
         { role: 'system', content: REVIEW_SYSTEM },
         { role: 'user', content: `需求清单：\n${checklist.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n代码：\n${html.slice(0, 60000)}` },
@@ -177,7 +219,13 @@ const TEMPLATES = [
     plan: {
       title: '项目看板',
       summary: '带优先级、截止日期和拖拽排序的任务看板',
-      features: ['新建任务（标题、优先级、截止日期）', '待办 / 进行中 / 已完成 三列', '拖拽卡片在列之间移动', '按优先级着色、逾期高亮', '数据自动保存'],
+      features: [
+        '新建任务（标题、优先级、截止日期）',
+        '待办 / 进行中 / 已完成 三列',
+        '拖拽卡片在列之间移动',
+        '按优先级着色、逾期高亮',
+        '数据自动保存',
+      ],
       design: '浅色背景，紫色主色，圆角卡片',
       data: '任务列表（标题、优先级、截止日、所在列）',
     },
@@ -221,8 +269,13 @@ export function mockCreate(prompt, plan, variant = 0) {
 }
 
 const COLOR_WORDS = [
-  [/蓝|blue/i, '#2563eb'], [/绿|green/i, '#16a34a'], [/红|red/i, '#dc2626'],
-  [/橙|orange/i, '#ea580c'], [/紫|purple/i, '#7c3aed'], [/粉|pink/i, '#db2777'], [/黑|black|暗/i, '#111827'],
+  [/蓝|blue/i, '#2563eb'],
+  [/绿|green/i, '#16a34a'],
+  [/红|red/i, '#dc2626'],
+  [/橙|orange/i, '#ea580c'],
+  [/紫|purple/i, '#7c3aed'],
+  [/粉|pink/i, '#db2777'],
+  [/黑|black|暗/i, '#111827'],
 ];
 
 export function mockEdit(baseHtml, instruction = '') {
@@ -240,7 +293,7 @@ function setPrimary(html, color) {
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
 async function fakeStream(text, onDelta, signal) {

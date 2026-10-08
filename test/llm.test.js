@@ -20,21 +20,34 @@ before(async () => {
   server = http.createServer((req, res) => {
     calls += 1;
     let body = '';
-    req.on('data', (c) => { body += c; });
+    req.on('data', (c) => {
+      body += c;
+    });
     req.on('end', () => handler(req, res, body ? JSON.parse(body) : null));
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => new Promise((r) => { server.closeAllConnections?.(); server.close(r); }));
-beforeEach(() => { calls = 0; });
+after(
+  () =>
+    new Promise((r) => {
+      server.closeAllConnections?.();
+      server.close(r);
+    }),
+);
+beforeEach(() => {
+  calls = 0;
+});
 
 const cfg = () => ({ baseUrl, apiKey: 'k', models: ['m'], plannerModel: 'm', mockOnly: false });
 const msgs = [{ role: 'user', content: 'hi' }];
 
 test('streamChat: 拼接 delta 并回调 onDelta，带上 Authorization 和请求体', async () => {
   let seen;
-  handler = (req, res, body) => { seen = { auth: req.headers.authorization, url: req.url, body }; sse(res, ['Hel', 'lo ', '世界']); };
+  handler = (req, res, body) => {
+    seen = { auth: req.headers.authorization, url: req.url, body };
+    sse(res, ['Hel', 'lo ', '世界']);
+  };
   const deltas = [];
   const full = await streamChat({ cfg: cfg(), model: 'm', messages: msgs, onDelta: (d) => deltas.push(d) });
   assert.equal(full, 'Hello 世界');
@@ -46,7 +59,10 @@ test('streamChat: 拼接 delta 并回调 onDelta，带上 Authorization 和请�
 });
 
 test('streamChat: 500 抛出 retryable 的 LlmError', async () => {
-  handler = (req, res) => { res.writeHead(500); res.end('boom'); };
+  handler = (req, res) => {
+    res.writeHead(500);
+    res.end('boom');
+  };
   await assert.rejects(
     streamChat({ cfg: cfg(), model: 'm', messages: msgs }),
     (e) => e instanceof LlmError && e.retryable === true && e.status === 500,
@@ -54,7 +70,10 @@ test('streamChat: 500 抛出 retryable 的 LlmError', async () => {
 });
 
 test('streamChat: 400 不可重试', async () => {
-  handler = (req, res) => { res.writeHead(400); res.end('bad'); };
+  handler = (req, res) => {
+    res.writeHead(400);
+    res.end('bad');
+  };
   await assert.rejects(
     streamChat({ cfg: cfg(), model: 'm', messages: msgs }),
     (e) => e instanceof LlmError && e.retryable === false && e.status === 400,
@@ -68,7 +87,10 @@ test('streamChat: 空内容报可重试错误', async () => {
 
 test('streamChatWithRetry: 503 后重试一次并成功', async () => {
   handler = (req, res) => {
-    if (calls === 1) { res.writeHead(503); res.end('busy'); } else sse(res, ['o', 'k']);
+    if (calls === 1) {
+      res.writeHead(503);
+      res.end('busy');
+    } else sse(res, ['o', 'k']);
   };
   const retries = [];
   const full = await streamChatWithRetry({ cfg: cfg(), model: 'm', messages: msgs, onRetry: (e, n) => retries.push([e.status, n]) });
@@ -78,7 +100,10 @@ test('streamChatWithRetry: 503 后重试一次并成功', async () => {
 });
 
 test('streamChatWithRetry: 不可重试错误不重试', async () => {
-  handler = (req, res) => { res.writeHead(401); res.end('no'); };
+  handler = (req, res) => {
+    res.writeHead(401);
+    res.end('no');
+  };
   await assert.rejects(streamChatWithRetry({ cfg: cfg(), model: 'm', messages: msgs }), (e) => e.status === 401);
   assert.equal(calls, 1);
 });
@@ -106,7 +131,14 @@ test('streamChat: 没有 finish_reason 就结束的流视为中途断开（parti
 test('streamChatWithRetry: 输出中途断开后整段重来，并通知 onReset', async () => {
   handler = (req, res) => (calls === 1 ? sse(res, ['半截'], { finish: false }) : sse(res, ['完整']));
   let resets = 0;
-  const full = await streamChatWithRetry({ cfg: cfg(), model: 'm', messages: msgs, onReset: () => { resets += 1; } });
+  const full = await streamChatWithRetry({
+    cfg: cfg(),
+    model: 'm',
+    messages: msgs,
+    onReset: () => {
+      resets += 1;
+    },
+  });
   assert.equal(full, '完整');
   assert.equal(calls, 2);
   assert.equal(resets, 1);

@@ -6,7 +6,10 @@ const IDLE_TIMEOUT_MS = 60_000;
 
 export function llmConfig(env = process.env) {
   const baseUrl = (env.LLM_BASE_URL || '').replace(/\/+$/, '');
-  const models = (env.LLM_MODELS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const models = (env.LLM_MODELS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   return {
     baseUrl,
     apiKey: env.LLM_API_KEY || '',
@@ -81,7 +84,11 @@ export async function streamChat({ cfg, model, messages, maxTokens = 16000, temp
           const data = line.slice(5).trim();
           if (data === '[DONE]') continue;
           let json;
-          try { json = JSON.parse(data); } catch { continue; }
+          try {
+            json = JSON.parse(data);
+          } catch {
+            continue;
+          }
           if (json.error) throw new LlmError(`模型返回错误: ${JSON.stringify(json.error).slice(0, 200)}`, { retryable: true });
           if (json.choices?.[0]?.finish_reason) finished = true;
           const delta = json.choices?.[0]?.delta?.content ?? json.choices?.[0]?.message?.content ?? '';
@@ -118,7 +125,13 @@ export async function streamChatWithRetry(opts, { retries = 1 } = {}) {
   for (;;) {
     let received = false;
     try {
-      return await streamChat({ ...opts, onDelta: (d) => { received = true; opts.onDelta?.(d); } });
+      return await streamChat({
+        ...opts,
+        onDelta: (d) => {
+          received = true;
+          opts.onDelta?.(d);
+        },
+      });
     } catch (e) {
       if (attempt >= retries || !e.retryable || (received && !e.partial) || opts.signal?.aborted) throw e;
       attempt += 1;

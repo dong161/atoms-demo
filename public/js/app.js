@@ -4,11 +4,30 @@ import { officialAssets, landingSections, inspirationPrompts } from './landing.j
 
 // ======================= 基础工具 =======================
 const $ = (sel, root = document) => root.querySelector(sel);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const store = {
-  get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 隐私模式等情况下忽略 */ } },
-  del(k) { try { localStorage.removeItem(k); } catch { /* ignore */ } },
+  get(k, d = null) {
+    try {
+      const v = localStorage.getItem(k);
+      return v == null ? d : JSON.parse(v);
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem(k, JSON.stringify(v));
+    } catch {
+      /* 隐私模式等情况下忽略 */
+    }
+  },
+  del(k) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  },
 };
 
 const AGENTS = {
@@ -42,7 +61,11 @@ const fmtTime = (t) => {
   if (diff < 60_000) return '刚刚';
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return (
+    d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  );
 };
 const fmtChars = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n || 0));
 const modelLabel = (m) => (m === 'mock' ? '演示模型' : m);
@@ -62,16 +85,24 @@ const ICONS = {
   send: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
   stop: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>',
-  desktop: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
-  mobile: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>',
-  refresh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>',
+  desktop:
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+  mobile:
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>',
+  refresh:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>',
   open: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
-  console: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
-  history: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg>',
-  trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
-  download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>',
+  console:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
+  history:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg>',
+  trash:
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  download:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>',
   race: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
-  eraser: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 20H9L4 15l10-10 7 7-6 6M8 11l6 6"/></svg>',
+  eraser:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 20H9L4 15l10-10 7 7-6 6M8 11l6 6"/></svg>',
 };
 
 // ======================= API =======================
@@ -88,7 +119,10 @@ async function api(path, { method = 'GET', body } = {}) {
   try {
     res = await fetch(path, {
       method,
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}) },
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -96,7 +130,9 @@ async function api(path, { method = 'GET', body } = {}) {
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 && state.user) { logout(true); }
+    if (res.status === 401 && state.user) {
+      logout(true);
+    }
     throw Object.assign(new Error(data.error || `请求失败（${res.status}）`), { status: res.status });
   }
   return data;
@@ -123,64 +159,162 @@ function logout(expired = false) {
 function accessibleDialog(mask, close) {
   const previous = document.activeElement;
   const onKey = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
     if (e.key === 'Tab') {
-      const items = [...mask.querySelectorAll('button,input,select,textarea,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
+      const items = [...mask.querySelectorAll('button,input,select,textarea,a[href]')].filter(
+        (el) => !el.disabled && el.getClientRects().length,
+      );
       if (!items.length) return;
-      const first = items[0], last = items.at(-1);
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      const first = items[0],
+        last = items.at(-1);
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+      if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
   mask.addEventListener('keydown', onKey);
-  mask.addEventListener('click', e => { if (e.target === mask) close(); });
+  mask.addEventListener('click', (e) => {
+    if (e.target === mask) close();
+  });
   const old = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
-  return () => { mask.removeEventListener('keydown',onKey); mask.remove(); document.body.style.overflow = old; previous?.focus(); };
+  return () => {
+    mask.removeEventListener('keydown', onKey);
+    mask.remove();
+    document.body.style.overflow = old;
+    previous?.focus();
+  };
 }
 function showOnboarding({ afterLogin, mode = 'register' } = {}) {
   if (document.querySelector('.auth-mask')) return;
   const mask = document.createElement('div');
   mask.className = 'modal-mask auth-mask';
-  let remove, busy = false;
-  const close = () => { if (!busy) remove(); };
+  let remove,
+    busy = false;
+  const close = () => {
+    if (!busy) remove();
+  };
   const draw = () => {
-    mask.innerHTML = `<div class="auth-shell" role="dialog" aria-modal="true" aria-labelledby="auth-title"><aside class="auth-art"><div class="auth-brand">◎ Atoms <small>DEMO</small></div><div class="auth-orbit">${['mike','emma','alex'].map(k=>`<img src="${officialAssets[k]}" alt="${AGENTS[k].name}" referrerpolicy="no-referrer">`).join('')}</div><h2>一个想法，<br>一整个 AI 团队。</h2><p>从第一句话，到第一个能点击的产品。你的创作之旅，从这里开始。</p><small>独立演示项目 · 非 Atoms 官方账号</small></aside><section class="auth-content"><button class="icon-btn auth-close" id="auth-close" aria-label="关闭登录窗口">✕</button><div class="auth-tabs"><button type="button" data-auth-mode="login" class="${mode==='login'?'active':''}">登录</button><button type="button" data-auth-mode="register" class="${mode==='register'?'active':''}">注册</button></div><h2 id="auth-title">${{login:'欢迎回来',register:'开启你的创作之旅',guest:'先体验，再决定',restore:'恢复你的项目'}[mode]}</h2><p>${{login:'登录后，继续你的项目和创作。',register:'创建账号，让你的想法有一个长期的家。',guest:'只需昵称，无需邮箱。请保存账号恢复码。',restore:'使用之前保存的恢复码，不会新建账号。'}[mode]}</p><form id="auth-form">${mode==='register'||mode==='guest'?'<label for="auth-name">昵称</label><input class="field" id="auth-name" name="nickname" autocomplete="nickname" maxlength="30" required placeholder="怎么称呼你？">':''}${mode==='login'||mode==='register'?`<label for="auth-email">邮箱</label><input class="field" id="auth-email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"><label for="auth-password">密码</label><div class="password-field"><input class="field" id="auth-password" type="password" minlength="10" maxlength="128" autocomplete="${mode==='login'?'current-password':'new-password'}" required placeholder="至少 10 个字符"><button type="button" id="password-eye" aria-label="显示密码">显示</button></div>`:''}${mode==='restore'?'<label for="auth-code">账号恢复码</label><input class="field" id="auth-code" type="password" autocomplete="off" required placeholder="粘贴恢复码">':''}<div class="auth-error" id="auth-error" role="alert"></div><button class="btn primary auth-submit" type="submit">${{login:'登录并继续',register:'创建账号',guest:'开始体验',restore:'恢复账号'}[mode]} ↗</button></form><div class="auth-alternatives"><button class="link" data-auth-mode="guest">仅用昵称快速体验</button><span>·</span><button class="link" data-auth-mode="restore">用恢复码登录</button></div><p class="auth-disclaimer">邮箱仅作为账号标识，暂不支持邮件验证或邮件找回密码。已有昵称账号请使用恢复码登录。</p></section></div>`;
-    $('#auth-close',mask).onclick = close;
-    mask.querySelectorAll('[data-auth-mode]').forEach(b => b.onclick=()=>{if(!busy){mode=b.dataset.authMode;draw();}});
-    const pw=$('#auth-password',mask);
-    if (pw) $('#password-eye',mask).onclick=()=>{pw.type=pw.type==='password'?'text':'password';$('#password-eye',mask).textContent=pw.type==='password'?'显示':'隐藏';$('#password-eye',mask).setAttribute('aria-label',pw.type==='password'?'显示密码':'隐藏密码');};
-    $('#auth-form',mask).onsubmit = async e => {
-      e.preventDefault(); if (busy) return; busy=true;
-      const buttons=[...mask.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
-      $('#auth-error',mask).textContent='';
-      const oldToken=state.token;
+    mask.innerHTML = `<div class="auth-shell" role="dialog" aria-modal="true" aria-labelledby="auth-title"><aside class="auth-art"><div class="auth-brand">◎ Atoms <small>DEMO</small></div><div class="auth-orbit">${['mike', 'emma', 'alex'].map((k) => `<img src="${officialAssets[k]}" alt="${AGENTS[k].name}" referrerpolicy="no-referrer">`).join('')}</div><h2>一个想法，<br>一整个 AI 团队。</h2><p>从第一句话，到第一个能点击的产品。你的创作之旅，从这里开始。</p><small>独立演示项目 · 非 Atoms 官方账号</small></aside><section class="auth-content"><button class="icon-btn auth-close" id="auth-close" aria-label="关闭登录窗口">✕</button><div class="auth-tabs"><button type="button" data-auth-mode="login" class="${mode === 'login' ? 'active' : ''}">登录</button><button type="button" data-auth-mode="register" class="${mode === 'register' ? 'active' : ''}">注册</button></div><h2 id="auth-title">${{ login: '欢迎回来', register: '开启你的创作之旅', guest: '先体验，再决定', restore: '恢复你的项目' }[mode]}</h2><p>${{ login: '登录后，继续你的项目和创作。', register: '创建账号，让你的想法有一个长期的家。', guest: '只需昵称，无需邮箱。请保存账号恢复码。', restore: '使用之前保存的恢复码，不会新建账号。' }[mode]}</p><form id="auth-form">${mode === 'register' || mode === 'guest' ? '<label for="auth-name">昵称</label><input class="field" id="auth-name" name="nickname" autocomplete="nickname" maxlength="30" required placeholder="怎么称呼你？">' : ''}${mode === 'login' || mode === 'register' ? `<label for="auth-email">邮箱</label><input class="field" id="auth-email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"><label for="auth-password">密码</label><div class="password-field"><input class="field" id="auth-password" type="password" minlength="10" maxlength="128" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required placeholder="至少 10 个字符"><button type="button" id="password-eye" aria-label="显示密码">显示</button></div>` : ''}${mode === 'restore' ? '<label for="auth-code">账号恢复码</label><input class="field" id="auth-code" type="password" autocomplete="off" required placeholder="粘贴恢复码">' : ''}<div class="auth-error" id="auth-error" role="alert"></div><button class="btn primary auth-submit" type="submit">${{ login: '登录并继续', register: '创建账号', guest: '开始体验', restore: '恢复账号' }[mode]} ↗</button></form><div class="auth-alternatives"><button class="link" data-auth-mode="guest">仅用昵称快速体验</button><span>·</span><button class="link" data-auth-mode="restore">用恢复码登录</button></div><p class="auth-disclaimer">邮箱仅作为账号标识，暂不支持邮件验证或邮件找回密码。已有昵称账号请使用恢复码登录。</p></section></div>`;
+    $('#auth-close', mask).onclick = close;
+    mask.querySelectorAll('[data-auth-mode]').forEach(
+      (b) =>
+        (b.onclick = () => {
+          if (!busy) {
+            mode = b.dataset.authMode;
+            draw();
+          }
+        }),
+    );
+    const pw = $('#auth-password', mask);
+    if (pw)
+      $('#password-eye', mask).onclick = () => {
+        pw.type = pw.type === 'password' ? 'text' : 'password';
+        $('#password-eye', mask).textContent = pw.type === 'password' ? '显示' : '隐藏';
+        $('#password-eye', mask).setAttribute('aria-label', pw.type === 'password' ? '显示密码' : '隐藏密码');
+      };
+    $('#auth-form', mask).onsubmit = async (e) => {
+      e.preventDefault();
+      if (busy) return;
+      busy = true;
+      const buttons = [...mask.querySelectorAll('button')];
+      buttons.forEach((b) => (b.disabled = true));
+      $('#auth-error', mask).textContent = '';
+      const oldToken = state.token;
       try {
         let r;
-        if(mode==='restore') {state.token=$('#auth-code',mask).value.trim();r=await api('/api/me');r.token=state.token;}
-        else if(mode==='guest') r=await api('/api/users',{method:'POST',body:{name:$('#auth-name',mask).value.trim()}});
-        else r=await api(`/api/auth/${mode}`,{method:'POST',body:{email:$('#auth-email',mask).value.trim(),password:pw.value,...(mode==='register'?{name:$('#auth-name',mask).value.trim()}:{})}});
-        state.token=r.token;state.user=r.user;store.set('atoms.token',r.token);busy=false;remove();await render();
-        toast(`欢迎${mode==='login'||mode==='restore'?'回来':''}，${r.user.name}`);
-        if(mode==='guest'||mode==='register') showFirstRun({afterDone:afterLogin});else afterLogin?.();
-      } catch(err){state.token=oldToken;$('#auth-error',mask).textContent=err.status===401?'邮箱、密码或恢复码不正确':err.message;busy=false;buttons.forEach(b=>b.disabled=false);}
+        if (mode === 'restore') {
+          state.token = $('#auth-code', mask).value.trim();
+          r = await api('/api/me');
+          r.token = state.token;
+        } else if (mode === 'guest') r = await api('/api/users', { method: 'POST', body: { name: $('#auth-name', mask).value.trim() } });
+        else
+          r = await api(`/api/auth/${mode}`, {
+            method: 'POST',
+            body: {
+              email: $('#auth-email', mask).value.trim(),
+              password: pw.value,
+              ...(mode === 'register' ? { name: $('#auth-name', mask).value.trim() } : {}),
+            },
+          });
+        state.token = r.token;
+        state.user = r.user;
+        store.set('atoms.token', r.token);
+        busy = false;
+        remove();
+        await render();
+        toast(`欢迎${mode === 'login' || mode === 'restore' ? '回来' : ''}，${r.user.name}`);
+        if (mode === 'guest' || mode === 'register') showFirstRun({ afterDone: afterLogin });
+        else afterLogin?.();
+      } catch (err) {
+        state.token = oldToken;
+        $('#auth-error', mask).textContent = err.status === 401 ? '邮箱、密码或恢复码不正确' : err.message;
+        busy = false;
+        buttons.forEach((b) => (b.disabled = false));
+      }
     };
-    const first=mask.querySelector('input'); first?.focus();
+    const first = mask.querySelector('input');
+    first?.focus();
   };
-  document.body.appendChild(mask);remove=accessibleDialog(mask,close);draw();
+  document.body.appendChild(mask);
+  remove = accessibleDialog(mask, close);
+  draw();
 }
 function showFirstRun({ afterDone } = {}) {
-  const mask=document.createElement('div');mask.className='modal-mask';let step=0, choice=0, remove;
-  const finish=()=>{store.set(`atoms.onboarded.${state.user.id}`,true);remove();afterDone?.();};
-  const titles=['先选一个小目标','认识你的创作流程','准备好第一个想法'];
-  const draw=()=>{
-    mask.innerHTML=`<div class="modal first-run" role="dialog" aria-modal="true" aria-labelledby="setup-title"><div class="setup-progress">${titles.map((t,i)=>`<span class="${i<=step?'active':''}"></span>`).join('')}</div><span class="section-eyebrow">FIRST STEPS · ${step+1} / 3</span><h2 id="setup-title">${titles[step]}</h2>${step===0?`<p>从一个你真的会用的工具开始。这里不会立即调用模型。</p><div class="setup-choices">${EXAMPLES.map((e,i)=>`<button class="${choice===i?'selected':''}" data-choice="${i}" aria-pressed="${choice===i}">${e.label}</button>`).join('')}</div>`:step===1?'<p>描述需求 → 多模型生成 → 比较候选 → 采用并预览 → 对话修改 → 发布分享。</p><div class="setup-tip">模型生成可能需要几分钟。你可以查看每路进度；如果中断，保留已有版本再重试。</div>':'<p>提示已为你准备好。完成后会填入首页输入框，你可以编辑，确认后再点发送。</p><div class="setup-tip">'+esc(EXAMPLES[choice].text)+'</div>'}<div class="row"><button class="btn ghost" id="setup-skip">暂时跳过</button>${step>0?'<button class="btn" id="setup-back">上一步</button>':''}<button class="btn primary" id="setup-next">${step===2?'完成，开始创作':'下一步'}</button></div></div>`;
-    $('#setup-skip',mask).onclick=finish;$('#setup-back',mask)&&($('#setup-back',mask).onclick=()=>{step--;draw();});
-    mask.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{choice=Number(b.dataset.choice);draw();});
-    $('#setup-next',mask).onclick=()=>{if(step<2){step++;draw();}else{if(!afterDone){const ta=$('#prompt');if(ta){ta.value=EXAMPLES[choice].text;ta.oninput?.();}}finish();}};
-    $('#setup-next',mask).focus();
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  let step = 0,
+    choice = 0,
+    remove;
+  const finish = () => {
+    store.set(`atoms.onboarded.${state.user.id}`, true);
+    remove();
+    afterDone?.();
   };
-  document.body.appendChild(mask);remove=accessibleDialog(mask,finish);draw();
+  const titles = ['先选一个小目标', '认识你的创作流程', '准备好第一个想法'];
+  const draw = () => {
+    mask.innerHTML = `<div class="modal first-run" role="dialog" aria-modal="true" aria-labelledby="setup-title"><div class="setup-progress">${titles.map((t, i) => `<span class="${i <= step ? 'active' : ''}"></span>`).join('')}</div><span class="section-eyebrow">FIRST STEPS · ${step + 1} / 3</span><h2 id="setup-title">${titles[step]}</h2>${step === 0 ? `<p>从一个你真的会用的工具开始。这里不会立即调用模型。</p><div class="setup-choices">${EXAMPLES.map((e, i) => `<button class="${choice === i ? 'selected' : ''}" data-choice="${i}" aria-pressed="${choice === i}">${e.label}</button>`).join('')}</div>` : step === 1 ? '<p>描述需求 → 多模型生成 → 比较候选 → 采用并预览 → 对话修改 → 发布分享。</p><div class="setup-tip">模型生成可能需要几分钟。你可以查看每路进度；如果中断，保留已有版本再重试。</div>' : '<p>提示已为你准备好。完成后会填入首页输入框，你可以编辑，确认后再点发送。</p><div class="setup-tip">' + esc(EXAMPLES[choice].text) + '</div>'}<div class="row"><button class="btn ghost" id="setup-skip">暂时跳过</button>${step > 0 ? '<button class="btn" id="setup-back">上一步</button>' : ''}<button class="btn primary" id="setup-next">${step === 2 ? '完成，开始创作' : '下一步'}</button></div></div>`;
+    $('#setup-skip', mask).onclick = finish;
+    $('#setup-back', mask) &&
+      ($('#setup-back', mask).onclick = () => {
+        step--;
+        draw();
+      });
+    mask.querySelectorAll('[data-choice]').forEach(
+      (b) =>
+        (b.onclick = () => {
+          choice = Number(b.dataset.choice);
+          draw();
+        }),
+    );
+    $('#setup-next', mask).onclick = () => {
+      if (step < 2) {
+        step++;
+        draw();
+      } else {
+        if (!afterDone) {
+          const ta = $('#prompt');
+          if (ta) {
+            ta.value = EXAMPLES[choice].text;
+            ta.oninput?.();
+          }
+        }
+        finish();
+      }
+    };
+    $('#setup-next', mask).focus();
+  };
+  document.body.appendChild(mask);
+  remove = accessibleDialog(mask, finish);
+  draw();
 }
 
 function showAccount() {
@@ -198,10 +332,18 @@ function showAccount() {
       </div>
     </div>`;
   document.body.appendChild(mask);
-  mask.onclick = (e) => { if (e.target === mask) mask.remove(); };
-  $('#ac-reveal',mask).onclick=()=>{$('#ac-secret',mask).classList.toggle('hidden');};
+  mask.onclick = (e) => {
+    if (e.target === mask) mask.remove();
+  };
+  $('#ac-reveal', mask).onclick = () => {
+    $('#ac-secret', mask).classList.toggle('hidden');
+  };
   $('#ac-close', mask).onclick = () => mask.remove();
-  $('#ac-copy', mask).onclick = () => navigator.clipboard.writeText(state.token).then(() => toast('已复制恢复码'), () => toast('复制失败，请手动选择复制', true));
+  $('#ac-copy', mask).onclick = () =>
+    navigator.clipboard.writeText(state.token).then(
+      () => toast('已复制恢复码'),
+      () => toast('复制失败，请手动选择复制', true),
+    );
   $('#ac-out', mask).onclick = () => {
     if (!confirm('退出后可用邮箱密码或已保存的恢复码登录。确定退出吗？')) return;
     mask.remove();
@@ -217,39 +359,46 @@ function topbar() {
 function raceControls(compact = false) {
   const on = state.race.on;
   const chosen = raceModels();
-  const chips = !state.config.mockOnly && on
-    ? `<div class="model-chips">${state.config.models.map((m) => `<button type="button" class="model-chip${chosen.includes(m) ? ' on' : ''}" data-model="${esc(m)}">${esc(m)}</button>`).join('')}</div>`
-    : '';
+  const chips =
+    !state.config.mockOnly && on
+      ? `<div class="model-chips">${state.config.models.map((m) => `<button type="button" class="model-chip${chosen.includes(m) ? ' on' : ''}" data-model="${esc(m)}">${esc(m)}</button>`).join('')}</div>`
+      : '';
   return `<button type="button" class="race-toggle${on ? ' on' : ''}" data-race-toggle title="同一需求交给多个模型同时生成，自动校验打分后择优采用">
       <span class="switch"></span>${ICONS.race} 赛马模式${on ? ` · ${chosen.length} 路` : ''}</button>${compact ? '' : chips}`;
 }
 
 function bindRaceControls(root, rerender) {
-  root.querySelectorAll('[data-race-toggle]').forEach((b) => (b.onclick = () => {
-    state.race.on = !state.race.on;
-    store.set('atoms.race', state.race);
-    rerender();
-  }));
-  root.querySelectorAll('[data-model]').forEach((b) => (b.onclick = () => {
-    const cur = raceModels();
-    const m = b.dataset.model;
-    let next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m];
-    if (next.length === 0) return toast('至少保留一个模型', true);
-    if (next.length > state.config.maxModels) return toast(`最多同时 ${state.config.maxModels} 路`, true);
-    state.race.models = next;
-    store.set('atoms.race', state.race);
-    rerender();
-  }));
+  root.querySelectorAll('[data-race-toggle]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        state.race.on = !state.race.on;
+        store.set('atoms.race', state.race);
+        rerender();
+      }),
+  );
+  root.querySelectorAll('[data-model]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        const cur = raceModels();
+        const m = b.dataset.model;
+        let next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m];
+        if (next.length === 0) return toast('至少保留一个模型', true);
+        if (next.length > state.config.maxModels) return toast(`最多同时 ${state.config.maxModels} 路`, true);
+        state.race.models = next;
+        store.set('atoms.race', state.race);
+        rerender();
+      }),
+  );
 }
 
 async function renderHome() {
   closeWorkspace();
   document.title = 'Atoms Demo · 一句话生成可用的应用';
   const app = $('#app');
-  const options=readComposerOptions();
+  const options = readComposerOptions();
   app.innerHTML = `${topbar()}
   <main class="home landing-home">
-    <section class="hero landing-hero"><div class="hero-glow" aria-hidden="true"></div><div class="hero-eyebrow"><span></span> YOUR IDEA. YOUR AI TEAM.</div><div class="agents-row hero-agents">${['mike','emma','bob','alex','david'].map(k=>`<span class="hero-agent"><img src="${officialAssets[k]}" alt="${AGENTS[k].name}" referrerpolicy="no-referrer"></span>`).join('')}<span class="team-ready">AI 团队，已就位</span></div><h1>让你的灵感，<br>成为<em>真正能用的产品。</em></h1><p>一句话描述想法，AI 团队帮你拆解、开发与校验。<br>比较多个答案，亲手试用，再把作品分享出去。</p></section>
+    <section class="hero landing-hero"><div class="hero-glow" aria-hidden="true"></div><div class="hero-eyebrow"><span></span> YOUR IDEA. YOUR AI TEAM.</div><div class="agents-row hero-agents">${['mike', 'emma', 'bob', 'alex', 'david'].map((k) => `<span class="hero-agent"><img src="${officialAssets[k]}" alt="${AGENTS[k].name}" referrerpolicy="no-referrer"></span>`).join('')}<span class="team-ready">AI 团队，已就位</span></div><h1>让你的灵感，<br>成为<em>真正能用的产品。</em></h1><p>一句话描述想法，AI 团队帮你拆解、开发与校验。<br>比较多个答案，亲手试用，再把作品分享出去。</p></section>
     <div class="creation-zone">
     <form class="composer" id="composer">
       <textarea id="prompt" aria-label="描述你想做的应用" rows="3" maxlength="2000" placeholder="告诉 Atoms 团队你想做什么，例如：做一个带优先级和截止日的项目看板，支持拖拽"></textarea>
@@ -272,33 +421,96 @@ async function renderHome() {
   const ta = $('#prompt');
   const draft = sessionStorage.getItem('atoms.draft');
   if (draft) ta.value = draft;
-  ta.oninput = () => { try { sessionStorage.setItem('atoms.draft', ta.value); } catch { /* ignore */ } };
-  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); } };
-  app.querySelectorAll('[data-ex]').forEach((b) => (b.onclick = () => { ta.value = EXAMPLES[b.dataset.ex].text; ta.oninput(); ta.focus(); }));
-  const drawOptions=(raceOpen=false)=>{
-    const slot=$('#race-slot');slot.innerHTML=optionsMarkup(options)+`<div class="race-settings ${raceOpen?'':'hidden'}" data-advanced-race>${raceControls()}</div>`;
-    bindComposerOptions(slot,options,{onChange:()=>{saveComposerOptions(options);drawOptions();},onRace:()=>slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),notify:toast});
-    bindRaceControls(slot,()=>drawOptions(true));
-  };drawOptions();
+  ta.oninput = () => {
+    try {
+      sessionStorage.setItem('atoms.draft', ta.value);
+    } catch {
+      /* ignore */
+    }
+  };
+  ta.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      $('#composer').requestSubmit();
+    }
+  };
+  app.querySelectorAll('[data-ex]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        ta.value = EXAMPLES[b.dataset.ex].text;
+        ta.oninput();
+        ta.focus();
+      }),
+  );
+  const drawOptions = (raceOpen = false) => {
+    const slot = $('#race-slot');
+    slot.innerHTML =
+      optionsMarkup(options) + `<div class="race-settings ${raceOpen ? '' : 'hidden'}" data-advanced-race>${raceControls()}</div>`;
+    bindComposerOptions(slot, options, {
+      onChange: () => {
+        saveComposerOptions(options);
+        drawOptions();
+      },
+      onRace: () => slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),
+      notify: toast,
+    });
+    bindRaceControls(slot, () => drawOptions(true));
+  };
+  drawOptions();
   $('#account-btn') && ($('#account-btn').onclick = showAccount);
-  $('#login-btn') && ($('#login-btn').onclick = () => showOnboarding({mode:'login'}));
-  $('#signup-btn') && ($('#signup-btn').onclick = () => showOnboarding({mode:'register'}));
+  $('#login-btn') && ($('#login-btn').onclick = () => showOnboarding({ mode: 'login' }));
+  $('#signup-btn') && ($('#signup-btn').onclick = () => showOnboarding({ mode: 'register' }));
   $('#guide-btn') && ($('#guide-btn').onclick = () => showFirstRun());
-  $('#bottom-start').onclick=()=>{if(!state.user)showOnboarding({mode:'register'});else{$('#prompt').scrollIntoView({behavior:'smooth',block:'center'});$('#prompt').focus();}};
-  app.querySelectorAll('[data-scroll]').forEach(a=>a.onclick=e=>{e.preventDefault();document.getElementById(a.dataset.scroll)?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});});
-  app.querySelectorAll('[data-inspire]').forEach(b=>b.onclick=()=>{ta.value=inspirationPrompts[Number(b.dataset.inspire)];ta.oninput();ta.scrollIntoView({behavior:'smooth',block:'center'});ta.focus();});
+  $('#bottom-start').onclick = () => {
+    if (!state.user) showOnboarding({ mode: 'register' });
+    else {
+      $('#prompt').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $('#prompt').focus();
+    }
+  };
+  app.querySelectorAll('[data-scroll]').forEach(
+    (a) =>
+      (a.onclick = (e) => {
+        e.preventDefault();
+        document
+          .getElementById(a.dataset.scroll)
+          ?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      }),
+  );
+  app.querySelectorAll('[data-inspire]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        ta.value = inspirationPrompts[Number(b.dataset.inspire)];
+        ta.oninput();
+        ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        ta.focus();
+      }),
+  );
   $('#composer').onsubmit = async (e) => {
     e.preventDefault();
     const prompt = ta.value.trim();
-    if (prompt.length < 2) { ta.focus(); return toast('先描述一下你想做的应用', true); }
-    if (!state.user) return showOnboarding({ afterLogin: () => { $('#prompt').value = prompt; $('#composer').requestSubmit(); } });
+    if (prompt.length < 2) {
+      ta.focus();
+      return toast('先描述一下你想做的应用', true);
+    }
+    if (!state.user)
+      return showOnboarding({
+        afterLogin: () => {
+          $('#prompt').value = prompt;
+          $('#composer').requestSubmit();
+        },
+      });
     const btn = $('#send');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>';
     try {
       const r = await api('/api/projects', { method: 'POST', body: { prompt, models: raceModels(), ...options } });
-      saveComposerOptions({themeId:options.themeId,attachments:[]});
-      try { sessionStorage.removeItem('atoms.draft'); } catch { /* ignore */ }
+      saveComposerOptions({ themeId: options.themeId, attachments: [] });
+      try {
+        sessionStorage.removeItem('atoms.draft');
+      } catch {
+        /* ignore */
+      }
       location.hash = `#/p/${r.project.id}`;
     } catch (err) {
       toast(err.message, true);
@@ -319,22 +531,37 @@ async function loadProjects() {
       box.innerHTML = '<div class="empty">还没有项目。在上面输入一句话，或点一个示例试试 👆</div>';
       return;
     }
-    box.innerHTML = `<div class="projects-grid">${projects.map((p) => `
+    box.innerHTML = `<div class="projects-grid">${projects
+      .map(
+        (p) => `
       <div class="project-card" data-id="${p.id}" tabindex="0">
         <h3>${esc(p.title)}</h3>
         <p>${esc(p.prompt)}</p>
         <div class="meta"><span>${p.version_seq ? `Version ${p.version_seq}` : '生成中 / 待选择'}${p.share_slug ? ' · 已发布' : ''}</span><span>${fmtTime(p.updated_at)}</span></div>
         <button class="icon-btn del" data-del="${p.id}" title="删除项目">${ICONS.trash}</button>
-      </div>`).join('')}</div>`;
+      </div>`,
+      )
+      .join('')}</div>`;
     box.querySelectorAll('.project-card').forEach((c) => {
       c.onclick = () => (location.hash = `#/p/${c.dataset.id}`);
-      c.onkeydown = (e) => { if (e.key === 'Enter') c.onclick(); };
+      c.onkeydown = (e) => {
+        if (e.key === 'Enter') c.onclick();
+      };
     });
-    box.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async (e) => {
-      e.stopPropagation();
-      if (!confirm('删除后项目、版本和应用数据都无法恢复，确定删除吗？')) return;
-      try { await api(`/api/projects/${b.dataset.del}`, { method: 'DELETE' }); toast('已删除'); loadProjects(); } catch (err) { toast(err.message, true); }
-    }));
+    box.querySelectorAll('[data-del]').forEach(
+      (b) =>
+        (b.onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm('删除后项目、版本和应用数据都无法恢复，确定删除吗？')) return;
+          try {
+            await api(`/api/projects/${b.dataset.del}`, { method: 'DELETE' });
+            toast('已删除');
+            loadProjects();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        }),
+    );
   } catch (e) {
     box.innerHTML = `<div class="empty">加载失败：${esc(e.message)} <button class="btn sm" id="retry-proj">重试</button></div>`;
     $('#retry-proj').onclick = loadProjects;
@@ -355,16 +582,28 @@ async function openWorkspace(id) {
   if (state.ws?.id === id) return;
   closeWorkspace();
   const ws = {
-    id, data: null, view: null, device: store.get('atoms.device', 'desktop'), consoleOpen: false, consoleLines: [],
-    progress: {}, scoring: new Set(), status: '', tab: 'preview', previewKey: null, drawer: false,
+    id,
+    data: null,
+    view: null,
+    device: store.get('atoms.device', 'desktop'),
+    consoleOpen: false,
+    consoleLines: [],
+    progress: {},
+    scoring: new Set(),
+    status: '',
+    tab: 'preview',
+    previewKey: null,
+    drawer: false,
   };
   state.ws = ws;
-  $('#app').innerHTML = `<div class="ws"><div class="ws-header"><button class="icon-btn" onclick="location.hash='#/'">${ICONS.back}</button><span class="spinner"></span></div></div>`;
+  $('#app').innerHTML =
+    `<div class="ws"><div class="ws-header"><button class="icon-btn" onclick="location.hash='#/'">${ICONS.back}</button><span class="spinner"></span></div></div>`;
   try {
     await reloadProject();
   } catch (e) {
     if (ws.closed) return;
-    $('#app').innerHTML = `${topbar()}<main class="home"><div class="empty">${esc(e.status === 404 ? '项目不存在或无权访问' : e.message)}<br><br><a class="btn" href="#/">返回首页</a></div></main>`;
+    $('#app').innerHTML =
+      `${topbar()}<main class="home"><div class="empty">${esc(e.status === 404 ? '项目不存在或无权访问' : e.message)}<br><br><a class="btn" href="#/">返回首页</a></div></main>`;
     return;
   }
 }
@@ -375,15 +614,19 @@ async function reloadProject({ keepView = true } = {}) {
   const data = await api(`/api/projects/${ws.id}`);
   if (ws.closed) return;
   ws.data = data;
-  for (const r of data.races) for (const e of r.entries) {
-    const runtime = e.score_detail?.runtime;
-    if (e.score != null && runtime) ws.scores = { ...(ws.scores || {}), [e.id]: runtime };
-  }
+  for (const r of data.races)
+    for (const e of r.entries) {
+      const runtime = e.score_detail?.runtime;
+      if (e.score != null && runtime) ws.scores = { ...(ws.scores || {}), [e.id]: runtime };
+    }
   document.title = `${data.project.title} · Atoms Demo`;
   if (!keepView || !ws.view || !viewIsValid(ws.view)) ws.view = defaultView();
   const needSub = data.activeJobId && ws.subscribedJob !== data.activeJobId;
   if (data.activeJobId) ws.jobId = data.activeJobId;
-  else { ws.jobId = null; ws.status = ''; }
+  else {
+    ws.jobId = null;
+    ws.status = '';
+  }
   renderWorkspace();
   if (needSub) subscribe(data.activeJobId);
   scheduleScoring();
@@ -413,7 +656,10 @@ function setView(view) {
 }
 
 const findEntry = (id) => {
-  for (const r of state.ws.data.races) { const e = r.entries.find((x) => x.id === id); if (e) return { race: r, entry: e }; }
+  for (const r of state.ws.data.races) {
+    const e = r.entries.find((x) => x.id === id);
+    if (e) return { race: r, entry: e };
+  }
   return null;
 };
 
@@ -448,10 +694,19 @@ function renderWorkspace() {
   ${ws.drawer ? '<div id="drawer-slot"></div>' : ''}`;
   $('#ws-back').onclick = () => (location.hash = '#/');
   $('#ws-title').onclick = renameProject;
-  $('#ws-history').onclick = () => { ws.drawer = !ws.drawer; renderWorkspace(); };
+  $('#ws-history').onclick = () => {
+    ws.drawer = !ws.drawer;
+    renderWorkspace();
+  };
   $('#ws-download').onclick = downloadCurrent;
   $('#ws-publish').onclick = publish;
-  app.querySelectorAll('.ws-tabs button').forEach((b) => (b.onclick = () => { ws.tab = b.dataset.tab; renderWorkspace(); }));
+  app.querySelectorAll('.ws-tabs button').forEach(
+    (b) =>
+      (b.onclick = () => {
+        ws.tab = b.dataset.tab;
+        renderWorkspace();
+      }),
+  );
   ws.previewKey = null;
   ws.preview?.destroy();
   ws.preview = null;
@@ -493,18 +748,29 @@ function renderMessage(m) {
   if (m.kind === 'race') {
     const race = ws.data.races.find((r) => r.id === m.meta?.raceId);
     const entries = race?.entries ?? [];
-    const steps = entries.map((e) => {
-      const p = ws.progress[e.id];
-      const st = p?.status || e.status;
-      const text = st === 'running' ? `生成中 · ${fmtChars(p?.chars)} 字` : st === 'done' ? `完成 · ${fmtChars(p?.chars ?? e.size)} 字 · ${((p?.durationMs ?? e.duration_ms ?? 0) / 1000).toFixed(1)}s` : `失败 · ${esc(p?.error || e.error || '')}`;
-      return `<div class="step ${st}"><span class="dot"></span><b>${esc(modelLabel(e.model))}</b>&nbsp;${text}</div>`;
-    }).join('');
+    const steps = entries
+      .map((e) => {
+        const p = ws.progress[e.id];
+        const st = p?.status || e.status;
+        const text =
+          st === 'running'
+            ? `生成中 · ${fmtChars(p?.chars)} 字`
+            : st === 'done'
+              ? `完成 · ${fmtChars(p?.chars ?? e.size)} 字 · ${((p?.durationMs ?? e.duration_ms ?? 0) / 1000).toFixed(1)}s`
+              : `失败 · ${esc(p?.error || e.error || '')}`;
+        return `<div class="step ${st}"><span class="dot"></span><b>${esc(modelLabel(e.model))}</b>&nbsp;${text}</div>`;
+      })
+      .join('');
     const doneCount = entries.filter((e) => (ws.progress[e.id]?.status || e.status) !== 'running').length;
     return `<div class="msg">${avatar(m.role)}<div class="body">${head}
       <div class="bubble">${esc(m.content)}</div>
-      ${race ? `<details class="activity" open><summary>${doneCount < entries.length ? '<span class="spinner"></span>' : '✓'} Alex 处理了 ${entries.length} 路任务（${doneCount}/${entries.length}）
+      ${
+        race
+          ? `<details class="activity" open><summary>${doneCount < entries.length ? '<span class="spinner"></span>' : '✓'} Alex 处理了 ${entries.length} 路任务（${doneCount}/${entries.length}）
         <button class="btn sm" style="margin-left:auto" data-open-race="${race.id}">${entries.length > 1 ? '查看赛马' : '查看过程'}</button></summary>
-        <div class="steps">${steps}</div></details>` : ''}
+        <div class="steps">${steps}</div></details>`
+          : ''
+      }
       </div></div>`;
   }
   if (m.kind === 'version') {
@@ -529,26 +795,44 @@ function renderComposer() {
   const canEdit = !!ws.data.project.current_version_id;
   const running = !!ws.jobId;
   ws.generation ??= readComposerOptions(ws.data.project);
-  const options=ws.generation;
+  const options = ws.generation;
   const old = $('#chat-input')?.value ?? ws.draft ?? '';
   form.innerHTML = `
     <textarea id="chat-input" rows="2" maxlength="2000" placeholder="${canEdit ? '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮' : '等第一个版本生成后，就可以在这里继续修改'}" ${canEdit ? '' : 'disabled'}></textarea>
     <div class="bar">
       <div class="composer-left" id="chat-race"></div>
-      ${running
-        ? `<button type="button" class="btn sm danger" id="stop-btn">${ICONS.stop} 停止</button>`
-        : `<button type="submit" class="btn sm primary" ${canEdit ? '' : 'disabled'}>发送修改</button>`}
+      ${
+        running
+          ? `<button type="button" class="btn sm danger" id="stop-btn">${ICONS.stop} 停止</button>`
+          : `<button type="submit" class="btn sm primary" ${canEdit ? '' : 'disabled'}>发送修改</button>`
+      }
     </div>`;
   const ta = $('#chat-input');
   ta.value = old;
   ta.oninput = () => (ws.draft = ta.value);
-  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
-  const slot=$('#chat-race');slot.innerHTML=optionsMarkup(options)+`<div class="race-settings hidden" data-advanced-race>${raceControls()}</div>`;
-  bindComposerOptions(slot,options,{onChange:()=>renderComposer(),onRace:()=>slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),notify:toast});
-  bindRaceControls(slot,renderComposer);
-  $('#stop-btn') && ($('#stop-btn').onclick = async () => {
-    try { await api(`/api/jobs/${ws.jobId}/cancel`, { method: 'POST' }); toast('正在停止…'); } catch (e) { toast(e.message, true); }
+  ta.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  };
+  const slot = $('#chat-race');
+  slot.innerHTML = optionsMarkup(options) + `<div class="race-settings hidden" data-advanced-race>${raceControls()}</div>`;
+  bindComposerOptions(slot, options, {
+    onChange: () => renderComposer(),
+    onRace: () => slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),
+    notify: toast,
   });
+  bindRaceControls(slot, renderComposer);
+  $('#stop-btn') &&
+    ($('#stop-btn').onclick = async () => {
+      try {
+        await api(`/api/jobs/${ws.jobId}/cancel`, { method: 'POST' });
+        toast('正在停止…');
+      } catch (e) {
+        toast(e.message, true);
+      }
+    });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const text = ta.value.trim();
@@ -561,7 +845,9 @@ function renderComposer() {
       subscribe(r.jobId);
       renderChat();
       renderComposer();
-    } catch (err) { toast(err.message, true); }
+    } catch (err) {
+      toast(err.message, true);
+    }
   };
 }
 
@@ -605,7 +891,12 @@ function subscribe(jobId) {
     }
     if (ended || ws.closed || state.ws !== ws || ctrl.signal.aborted) return;
     // 连接断开：任务仍在服务端运行，稍后重新拉取状态并续上
-    setTimeout(() => { if (!ws.closed && state.ws === ws) { ws.subscribedJob = null; reloadProject().catch(() => {}); } }, 2000);
+    setTimeout(() => {
+      if (!ws.closed && state.ws === ws) {
+        ws.subscribedJob = null;
+        reloadProject().catch(() => {});
+      }
+    }, 2000);
   })();
 }
 
@@ -626,7 +917,12 @@ function handleEvent(ev) {
       if (d.messages.some((x) => x.id === m.id)) break;
       d.messages.push(m);
       if (m.kind === 'race' && !d.races.some((r) => r.id === m.meta.raceId)) {
-        d.races.push({ id: m.meta.raceId, status: 'running', instruction: d.messages.filter((x) => x.role === 'user').at(-1)?.content, entries: m.meta.entries.map((e) => ({ ...e, status: 'running', created_at: Date.now() })) });
+        d.races.push({
+          id: m.meta.raceId,
+          status: 'running',
+          instruction: d.messages.filter((x) => x.role === 'user').at(-1)?.content,
+          entries: m.meta.entries.map((e) => ({ ...e, status: 'running', created_at: Date.now() })),
+        });
         ws.status = m.meta.entries.length > 1 ? `${m.meta.entries.length} 路模型正在并行开发…` : 'Alex 正在写代码…';
         setView({ type: 'race', id: m.meta.raceId });
       } else if (m.kind === 'plan') {
@@ -650,7 +946,9 @@ function handleEvent(ev) {
         const was = hit.entry.status;
         hit.entry.status = ev.status;
         if (ev.status !== 'running') {
-          hit.entry.error = ev.error; hit.entry.duration_ms = ev.durationMs; hit.entry.source = ev.source;
+          hit.entry.error = ev.error;
+          hit.entry.duration_ms = ev.durationMs;
+          hit.entry.source = ev.source;
           if (ev.status === 'done') hit.entry.score_detail = { static: ev.static, review: ev.review };
         }
         if (was !== ev.status) {
@@ -673,7 +971,10 @@ function handleEvent(ev) {
       ws.jobId = null;
       ws.status = '';
       if (ev.status !== 'done') reloadProject().catch(() => {});
-      else { renderChat(); renderComposer(); }
+      else {
+        renderChat();
+        renderComposer();
+      }
       break;
     default:
   }
@@ -687,13 +988,14 @@ function updateWorking() {
   if (steps.length) {
     // 进度数字变化频繁，只更新对话里的步骤文本
     const ws = state.ws;
-    for (const r of ws.data.races) for (const e of r.entries) {
-      const p = ws.progress[e.id];
-      if (!p || p.status !== 'running') continue;
-      document.querySelectorAll('#chat-list .step.running').forEach((s) => {
-        if (s.querySelector('b')?.textContent === modelLabel(e.model)) s.lastChild.textContent = ` 生成中 · ${fmtChars(p.chars)} 字`;
-      });
-    }
+    for (const r of ws.data.races)
+      for (const e of r.entries) {
+        const p = ws.progress[e.id];
+        if (!p || p.status !== 'running') continue;
+        document.querySelectorAll('#chat-list .step.running').forEach((s) => {
+          if (s.querySelector('b')?.textContent === modelLabel(e.model)) s.lastChild.textContent = ` 生成中 · ${fmtChars(p.chars)} 字`;
+        });
+      }
   }
 }
 
@@ -720,7 +1022,11 @@ async function renderPreview(box) {
   const ws = state.ws;
   const v = ws.view;
   const d = ws.data;
-  let label, banner = '', html, kv = null, entryId = null;
+  let label,
+    banner = '',
+    html,
+    kv = null,
+    entryId = null;
   if (v.type === 'version') {
     const ver = d.versions.find((x) => x.id === v.id);
     const cur = d.versions.find((x) => x.id === d.project.current_version_id);
@@ -749,21 +1055,46 @@ async function renderPreview(box) {
       <button class="icon-btn${ws.device === 'mobile' ? ' on' : ''}" data-device="mobile" title="手机视图">${ICONS.mobile}</button>
       <button class="icon-btn" id="vt-refresh" title="刷新预览">${ICONS.refresh}</button>
       <span class="label">${label}</span><span class="spacer"></span>
-      ${v.type === 'version' ? `<button class="icon-btn" id="vt-reset" title="清空这个应用保存的数据">${ICONS.eraser}</button>
-      <button class="icon-btn" id="vt-open" title="在新标签页打开">${ICONS.open}</button>` : ''}
+      ${
+        v.type === 'version'
+          ? `<button class="icon-btn" id="vt-reset" title="清空这个应用保存的数据">${ICONS.eraser}</button>
+      <button class="icon-btn" id="vt-open" title="在新标签页打开">${ICONS.open}</button>`
+          : ''
+      }
       <button class="icon-btn${ws.consoleOpen ? ' on' : ''}" id="vt-console" title="Console">${ICONS.console}${errCount ? `<sup style="color:var(--err);font-weight:700">${errCount}</sup>` : ''}</button>
     </div>
     ${banner}
     <div class="viewer-main"><div class="frame-wrap ${ws.device}" id="frame-wrap"><div class="placeholder"><span class="spinner"></span></div></div></div>
     <div class="console ${ws.consoleOpen ? '' : 'hidden'}" id="console"></div>`;
-  box.querySelectorAll('[data-device]').forEach((b) => (b.onclick = () => { ws.device = b.dataset.device; store.set('atoms.device', ws.device); renderViewer(true); }));
+  box.querySelectorAll('[data-device]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        ws.device = b.dataset.device;
+        store.set('atoms.device', ws.device);
+        renderViewer(true);
+      }),
+  );
   $('#vt-refresh').onclick = () => renderViewer(true);
-  $('#vt-console').onclick = () => { ws.consoleOpen = !ws.consoleOpen; $('#console').classList.toggle('hidden', !ws.consoleOpen); $('#vt-console').classList.toggle('on', ws.consoleOpen); renderConsole(); };
-  $('#vt-open') && ($('#vt-open').onclick = () => window.open(`/preview?project=${encodeURIComponent(ws.id)}&version=${encodeURIComponent(v.id)}`, '_blank'));
-  $('#vt-reset') && ($('#vt-reset').onclick = async () => {
-    if (!confirm('清空这个应用保存的所有数据（恢复到初始示例数据）？')) return;
-    try { await api(`/api/projects/${ws.id}/kv`, { method: 'POST', body: { clear: true } }); toast('已清空应用数据'); renderViewer(true); } catch (e) { toast(e.message, true); }
-  });
+  $('#vt-console').onclick = () => {
+    ws.consoleOpen = !ws.consoleOpen;
+    $('#console').classList.toggle('hidden', !ws.consoleOpen);
+    $('#vt-console').classList.toggle('on', ws.consoleOpen);
+    renderConsole();
+  };
+  $('#vt-open') &&
+    ($('#vt-open').onclick = () =>
+      window.open(`/preview?project=${encodeURIComponent(ws.id)}&version=${encodeURIComponent(v.id)}`, '_blank'));
+  $('#vt-reset') &&
+    ($('#vt-reset').onclick = async () => {
+      if (!confirm('清空这个应用保存的所有数据（恢复到初始示例数据）？')) return;
+      try {
+        await api(`/api/projects/${ws.id}/kv`, { method: 'POST', body: { clear: true } });
+        toast('已清空应用数据');
+        renderViewer(true);
+      } catch (e) {
+        toast(e.message, true);
+      }
+    });
   $('#restore-btn') && ($('#restore-btn').onclick = () => restoreVersion(v.id));
   $('#back-current') && ($('#back-current').onclick = () => setView({ type: 'version', id: d.project.current_version_id }));
   $('#back-race') && ($('#back-race').onclick = () => setView({ type: 'race', id: findEntry(v.id).race.id }));
@@ -772,9 +1103,7 @@ async function renderPreview(box) {
 
   const key = ws.previewKey;
   try {
-    html = v.type === 'version'
-      ? (await api(`/api/versions/${v.id}/html`)).html
-      : (await api(`/api/race-entries/${v.id}/html`)).html;
+    html = v.type === 'version' ? (await api(`/api/versions/${v.id}/html`)).html : (await api(`/api/race-entries/${v.id}/html`)).html;
   } catch (e) {
     if (ws.previewKey === key) $('#frame-wrap').innerHTML = `<div class="placeholder"><h3>加载失败</h3><p>${esc(e.message)}</p></div>`;
     return;
@@ -801,7 +1130,9 @@ function renderConsole() {
   const el = $('#console');
   if (!el || el.classList.contains('hidden')) return;
   const lines = state.ws.consoleLines;
-  el.innerHTML = lines.length ? lines.map((l) => `<div class="line ${l.level}">[${l.level}] ${esc(l.text)}</div>`).join('') : '<div class="line">暂无输出。应用里的 console 输出和报错会显示在这里。</div>';
+  el.innerHTML = lines.length
+    ? lines.map((l) => `<div class="line ${l.level}">[${l.level}] ${esc(l.text)}</div>`).join('')
+    : '<div class="line">暂无输出。应用里的 console 输出和报错会显示在这里。</div>';
   el.scrollTop = el.scrollHeight;
 }
 
@@ -809,18 +1140,28 @@ function renderConsole() {
 function renderRace(box) {
   const ws = state.ws;
   const race = ws.data.races.find((r) => r.id === ws.view.id);
-  if (!race) { box.innerHTML = ''; return; }
+  if (!race) {
+    box.innerHTML = '';
+    return;
+  }
   const scores = ws.scores || {};
   const done = race.entries.filter((e) => e.status === 'done');
   const allDone = race.entries.every((e) => e.status !== 'running');
   // 总分相同则更快完成的优先
-  const ranked = done.filter((e) => scores[e.id]).sort((a, b) => scores[b.id].score - scores[a.id].score || (a.duration_ms ?? 1e9) - (b.duration_ms ?? 1e9));
+  const ranked = done
+    .filter((e) => scores[e.id])
+    .sort((a, b) => scores[b.id].score - scores[a.id].score || (a.duration_ms ?? 1e9) - (b.duration_ms ?? 1e9));
   const best = allDone && ranked.length === done.length && ranked.length > 1 ? ranked[0].id : null;
   const multi = race.entries.length > 1;
   const sub = !allDone
     ? `${race.entries.length} 路${multi ? '模型并行' : ''}生成中，代码实时流式输出`
-    : best ? `推荐采用 <b>${esc(modelLabel(race.entries.find((e) => e.id === best).model))}</b>（${scores[best].score} 分）。也可以先全屏试用再决定。`
-      : ws.scoring.size ? '正在沙箱里自动校验：模拟点击、填写、检测报错与移动端适配…' : race.status === 'failed' ? '这一轮生成失败了，可以在左侧重新描述需求再试一次。' : '生成完成。';
+    : best
+      ? `推荐采用 <b>${esc(modelLabel(race.entries.find((e) => e.id === best).model))}</b>（${scores[best].score} 分）。也可以先全屏试用再决定。`
+      : ws.scoring.size
+        ? '正在沙箱里自动校验：模拟点击、填写、检测报错与移动端适配…'
+        : race.status === 'failed'
+          ? '这一轮生成失败了，可以在左侧重新描述需求再试一次。'
+          : '生成完成。';
   box.innerHTML = `<div class="race">
     <div class="race-head"><div><h3>${multi ? '🏁 赛马对比' : '⚙️ 生成过程'} <span class="badge">${esc(race.instruction?.slice(0, 40) || '')}</span></h3><p>${sub}</p></div>
       ${allDone && done.length ? '<button class="btn sm" id="rescore">重新校验</button>' : ''}</div>
@@ -829,7 +1170,12 @@ function renderRace(box) {
   box.querySelectorAll('[data-try]').forEach((b) => (b.onclick = () => setView({ type: 'entry', id: b.dataset.try })));
   box.querySelectorAll('[data-adopt]').forEach((b) => (b.onclick = () => adopt(b.dataset.adopt)));
   box.querySelectorAll('[data-goto-version]').forEach((b) => (b.onclick = () => setView({ type: 'version', id: b.dataset.gotoVersion })));
-  $('#rescore') && ($('#rescore').onclick = () => { for (const e of done) delete scores[e.id]; scheduleScoring(true); renderViewer(true); });
+  $('#rescore') &&
+    ($('#rescore').onclick = () => {
+      for (const e of done) delete scores[e.id];
+      scheduleScoring(true);
+      renderViewer(true);
+    });
   // 已完成的候选挂一个缩小的可交互缩略预览
   for (const e of done) mountThumb(e.id);
 }
@@ -839,9 +1185,16 @@ function entryCard(race, e, best) {
   const p = ws.progress[e.id] || {};
   const sc = ws.scores?.[e.id];
   const adopted = race.adopted_entry_id === e.id;
-  const statusBadge = e.status === 'running' ? '<span class="badge primary"><span class="spinner" style="width:10px;height:10px"></span>生成中</span>'
-    : e.status === 'failed' ? '<span class="badge err">失败</span>'
-      : adopted ? '<span class="badge ok">✓ 已采用</span>' : best === e.id ? '<span class="badge primary">★ 推荐</span>' : '<span class="badge ok">完成</span>';
+  const statusBadge =
+    e.status === 'running'
+      ? '<span class="badge primary"><span class="spinner" style="width:10px;height:10px"></span>生成中</span>'
+      : e.status === 'failed'
+        ? '<span class="badge err">失败</span>'
+        : adopted
+          ? '<span class="badge ok">✓ 已采用</span>'
+          : best === e.id
+            ? '<span class="badge primary">★ 推荐</span>'
+            : '<span class="badge ok">完成</span>';
   let stage;
   if (e.status === 'running') stage = `<div class="stream" data-stream="${e.id}">${esc(p.tail || waitingText(e.id))}</div>`;
   else if (e.status === 'failed') stage = `<div class="fail">${esc(e.error || p.error || '生成失败')}</div>`;
@@ -865,9 +1218,17 @@ function entryCard(race, e, best) {
     <div class="entry-body">
       <div class="entry-stats"><span data-chars="${e.id}">📝 ${fmtChars(chars)} 字</span>${dur ? `<span>⏱ ${(dur / 1000).toFixed(1)}s</span>` : ''}${(e.source || p.source) === 'mock' && e.model !== 'mock' ? '<span class="badge warn">已用演示兜底</span>' : ''}</div>
       ${scoreHtml}
-      ${e.status === 'done' ? `<div class="entry-actions"><button class="btn sm" data-try="${e.id}">全屏试用</button>${adopted
-        ? (versionMsg ? `<button class="btn sm" data-goto-version="${versionMsg.meta.versionId}">查看版本</button>` : '')
-        : `<button class="btn sm primary" data-adopt="${e.id}">采用此版本</button>`}</div>` : ''}
+      ${
+        e.status === 'done'
+          ? `<div class="entry-actions"><button class="btn sm" data-try="${e.id}">全屏试用</button>${
+              adopted
+                ? versionMsg
+                  ? `<button class="btn sm" data-goto-version="${versionMsg.meta.versionId}">查看版本</button>`
+                  : ''
+                : `<button class="btn sm primary" data-adopt="${e.id}">采用此版本</button>`
+            }</div>`
+          : ''
+      }
     </div>
   </div>`;
 }
@@ -910,7 +1271,10 @@ async function mountThumb(entryId) {
   if (!slot) return;
   try {
     let html = thumbCache.get(entryId);
-    if (!html) { html = (await api(`/api/race-entries/${entryId}/html`)).html; thumbCache.set(entryId, html); }
+    if (!html) {
+      html = (await api(`/api/race-entries/${entryId}/html`)).html;
+      thumbCache.set(entryId, html);
+    }
     const target = document.querySelector(`[data-thumb="${entryId}"]`);
     if (!target) return;
     await mountPreview(target, html, {});
@@ -921,7 +1285,9 @@ async function mountThumb(entryId) {
     frame.style.height = `${Math.ceil(target.clientHeight / scale)}px`;
     frame.style.transform = `scale(${scale})`;
     frame.style.transformOrigin = '0 0';
-  } catch { /* 缩略图失败不影响主流程 */ }
+  } catch {
+    /* 缩略图失败不影响主流程 */
+  }
 }
 
 // ---------- 自动校验 ----------
@@ -949,7 +1315,10 @@ async function scoreEntry(ws, e) {
     const result = await probeApp(html, { staticScore, review });
     if (ws.closed) return;
     ws.scores[e.id] = result;
-    api(`/api/race-entries/${e.id}/score`, { method: 'POST', body: { score: result.score, detail: { score: result.score, items: result.items } } }).catch(() => {});
+    api(`/api/race-entries/${e.id}/score`, {
+      method: 'POST',
+      body: { score: result.score, detail: { score: result.score, items: result.items } },
+    }).catch(() => {});
   } finally {
     ws.scoring.delete(e.id);
     if (!ws.closed && state.ws === ws) {
@@ -979,7 +1348,9 @@ async function restoreVersion(versionId) {
     toast(`已回退，生成 Version ${r.version.seq}`);
     await reloadProject({ keepView: false });
     setView({ type: 'version', id: r.version.id });
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    toast(e.message, true);
+  }
 }
 
 async function renameProject() {
@@ -991,7 +1362,9 @@ async function renameProject() {
     ws.data.project.title = title.trim();
     $('#ws-title').textContent = title.trim();
     document.title = `${title.trim()} · Atoms Demo`;
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    toast(e.message, true);
+  }
 }
 
 async function downloadCurrent() {
@@ -1006,7 +1379,9 @@ async function downloadCurrent() {
     a.download = `${ws.data.project.title.replace(/[\\/:*?"<>|]/g, '_')}-v${seq}.html`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    toast(e.message, true);
+  }
 }
 
 async function publish() {
@@ -1027,7 +1402,9 @@ async function publish() {
       <div class="row"><button class="btn danger" id="pub-off">取消发布</button><button class="btn" id="pub-copy">复制链接</button><a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">打开</a><button class="btn primary" id="pub-ok">完成</button></div>
     </div>`;
     document.body.appendChild(mask);
-    mask.onclick = (e) => { if (e.target === mask) mask.remove(); };
+    mask.onclick = (e) => {
+      if (e.target === mask) mask.remove();
+    };
     $('#pub-ok', mask).onclick = () => mask.remove();
     $('#pub-off', mask).onclick = async () => {
       if (!confirm('取消发布后链接立即失效，访客数据也会清除。确定吗？')) return;
@@ -1038,11 +1415,19 @@ async function publish() {
         mask.remove();
         toast('已取消发布，旧链接已失效');
         renderWorkspace();
-      } catch (e) { toast(e.message, true); }
+      } catch (e) {
+        toast(e.message, true);
+      }
     };
-    $('#pub-copy', mask).onclick = () => navigator.clipboard.writeText(url).then(() => toast('链接已复制'), () => toast('复制失败，请手动复制', true));
+    $('#pub-copy', mask).onclick = () =>
+      navigator.clipboard.writeText(url).then(
+        () => toast('链接已复制'),
+        () => toast('复制失败，请手动复制', true),
+      );
     btn.textContent = '已发布';
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    toast(e.message, true);
+  }
   btn.disabled = false;
 }
 
@@ -1052,15 +1437,32 @@ function renderDrawer() {
   const { versions, project } = ws.data;
   slot.innerHTML = `<aside class="drawer">
     <div class="drawer-head"><h3>版本历史</h3><button class="icon-btn" id="drawer-close">✕</button></div>
-    <div class="drawer-list">${versions.length ? versions.map((v) => `
+    <div class="drawer-list">${
+      versions.length
+        ? versions
+            .map(
+              (v) => `
       <div class="v-item${v.id === project.current_version_id ? ' current' : ''}" data-v="${v.id}">
         <span class="v-ico" style="width:32px;height:32px;border-radius:9px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:12px">V${v.seq}</span>
         <div class="v-text"><b>${esc(v.title)}</b><span>${esc(v.source === 'restore' ? '回退' : modelLabel(v.model || ''))} · ${fmtTime(v.created_at)}${v.id === project.published_version_id ? ' · 已发布' : ''}</span></div>
         ${v.id === project.current_version_id ? '<span class="badge primary">当前</span>' : ''}
-      </div>`).join('') : '<div class="empty">还没有版本</div>'}</div>
+      </div>`,
+            )
+            .join('')
+        : '<div class="empty">还没有版本</div>'
+    }</div>
   </aside>`;
-  $('#drawer-close').onclick = () => { ws.drawer = false; slot.remove(); };
-  slot.querySelectorAll('[data-v]').forEach((el) => (el.onclick = () => { ws.drawer = false; setView({ type: 'version', id: el.dataset.v }); }));
+  $('#drawer-close').onclick = () => {
+    ws.drawer = false;
+    slot.remove();
+  };
+  slot.querySelectorAll('[data-v]').forEach(
+    (el) =>
+      (el.onclick = () => {
+        ws.drawer = false;
+        setView({ type: 'version', id: el.dataset.v });
+      }),
+  );
 }
 
 // ======================= 路由 =======================
@@ -1068,16 +1470,27 @@ async function render() {
   const hash = location.hash || '#/';
   const m = hash.match(/^#\/p\/([\w-]+)/);
   if (m) {
-    if (!state.user) { location.hash = '#/'; return; }
+    if (!state.user) {
+      location.hash = '#/';
+      return;
+    }
     return openWorkspace(m[1]);
   }
   return renderHome();
 }
 
 async function boot() {
-  try { state.config = await api('/api/config'); } catch { /* 保持默认演示配置 */ }
+  try {
+    state.config = await api('/api/config');
+  } catch {
+    /* 保持默认演示配置 */
+  }
   if (state.token) {
-    try { state.user = (await api('/api/me')).user; } catch { /* token 失效会在 api() 里清掉 */ }
+    try {
+      state.user = (await api('/api/me')).user;
+    } catch {
+      /* token 失效会在 api() 里清掉 */
+    }
   }
   window.addEventListener('hashchange', render);
   await render();

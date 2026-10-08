@@ -10,7 +10,9 @@ async function loadRuntime() {
 const SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads';
 
 function safeJson(obj) {
-  return JSON.stringify(obj).replace(/</g, '\\u003c').replace(/[\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`);
+  return JSON.stringify(obj)
+    .replace(/</g, '\\u003c')
+    .replace(/[\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`);
 }
 
 export async function buildSrcdoc(html, { data = {}, mode = 'live', channel }) {
@@ -34,7 +36,11 @@ export async function mountPreview(container, html, { kv, onConsole, onReady } =
   const channel = newChannel();
   let data = {};
   if (kv) {
-    try { data = await kv.load(); } catch (e) { onConsole?.({ level: 'warn', text: `读取云端数据失败：${e.message}` }); }
+    try {
+      data = await kv.load();
+    } catch (e) {
+      onConsole?.({ level: 'warn', text: `读取云端数据失败：${e.message}` });
+    }
   }
   const iframe = document.createElement('iframe');
   iframe.setAttribute('sandbox', SANDBOX);
@@ -56,14 +62,20 @@ export async function mountPreview(container, html, { kv, onConsole, onReady } =
   container.appendChild(iframe);
   return {
     iframe,
-    destroy() { window.removeEventListener('message', handler); iframe.remove(); },
+    destroy() {
+      window.removeEventListener('message', handler);
+      iframe.remove();
+    },
   };
 }
 
 /** 等待 iframe 发来指定类型的消息。 */
 function waitFor(iframe, channel, type, timeout) {
   return new Promise((resolve) => {
-    const t = setTimeout(() => { window.removeEventListener('message', h); resolve(null); }, timeout);
+    const t = setTimeout(() => {
+      window.removeEventListener('message', h);
+      resolve(null);
+    }, timeout);
     function h(e) {
       if (e.source !== iframe.contentWindow || !e.data || e.data.__atoms !== channel || e.data.type !== type) return;
       clearTimeout(t);
@@ -116,20 +128,58 @@ export function scoreReport(report, measure, staticScore = 10, review = null) {
     items.push({ key: 'render', label: '页面渲染', got: 0, max: 10, note: '页面没有在规定时间内完成加载' });
   } else {
     const renderOk = report.textLength > 40 && report.elements > 15;
-    items.push({ key: 'render', label: '页面渲染', max: 10, got: renderOk ? 10 : report.textLength > 0 ? 5 : 0, note: `${report.elements} 个元素，${report.textLength} 字` });
+    items.push({
+      key: 'render',
+      label: '页面渲染',
+      max: 10,
+      got: renderOk ? 10 : report.textLength > 0 ? 5 : 0,
+      note: `${report.elements} 个元素，${report.textLength} 字`,
+    });
     const errs = report.errors?.length ?? 0;
-    items.push({ key: 'errors', label: '运行无报错', max: 10, got: Math.max(0, 10 - errs * 4), note: errs ? `${errs} 个错误：${report.errors[0]}` : '没有 JS 报错' });
+    items.push({
+      key: 'errors',
+      label: '运行无报错',
+      max: 10,
+      got: Math.max(0, 10 - errs * 4),
+      note: errs ? `${errs} 个错误：${report.errors[0]}` : '没有 JS 报错',
+    });
     const ratio = report.clicked ? report.responsive / report.clicked : 0;
-    items.push({ key: 'interact', label: '真实交互', max: 15, got: report.interactive === 0 ? 0 : Math.round(5 + 10 * ratio), note: `${report.interactive} 个可交互控件，抽测 ${report.clicked} 个，${report.responsive} 个有响应` });
+    items.push({
+      key: 'interact',
+      label: '真实交互',
+      max: 15,
+      got: report.interactive === 0 ? 0 : Math.round(5 + 10 * ratio),
+      note: `${report.interactive} 个可交互控件，抽测 ${report.clicked} 个，${report.responsive} 个有响应`,
+    });
     const persistGot = report.storageWrites > 0 ? 10 : report.storageReads > 0 ? 5 : 0;
-    items.push({ key: 'persist', label: '数据持久化', max: 10, got: persistGot, note: report.storageWrites > 0 ? `交互后写入存储 ${report.storageWrites} 次` : report.storageReads > 0 ? '会读取存储，但交互后没有写入' : '没有使用存储' });
+    items.push({
+      key: 'persist',
+      label: '数据持久化',
+      max: 10,
+      got: persistGot,
+      note:
+        report.storageWrites > 0
+          ? `交互后写入存储 ${report.storageWrites} 次`
+          : report.storageReads > 0
+            ? '会读取存储，但交互后没有写入'
+            : '没有使用存储',
+    });
     const mobileOk = measure ? !measure.overflow : false;
-    items.push({ key: 'mobile', label: '移动端适配', max: 5, got: measure ? (mobileOk ? 5 : 1) : 0, note: measure ? (mobileOk ? '375px 宽无横向滚动' : `375px 宽时内容宽 ${measure.scrollWidth}px，出现横向滚动`) : '未能测量' });
+    items.push({
+      key: 'mobile',
+      label: '移动端适配',
+      max: 5,
+      got: measure ? (mobileOk ? 5 : 1) : 0,
+      note: measure ? (mobileOk ? '375px 宽无横向滚动' : `375px 宽时内容宽 ${measure.scrollWidth}px，出现横向滚动`) : '未能测量',
+    });
   }
   if (review?.results?.length) {
     const ok = review.results.filter((r) => r.ok).length;
     items.push({
-      key: 'review', label: '需求覆盖', max: 40, got: Math.round((ok / review.results.length) * 40),
+      key: 'review',
+      label: '需求覆盖',
+      max: 40,
+      got: Math.round((ok / review.results.length) * 40),
       note: `${ok}/${review.results.length} 项满足\n${review.results.map((r) => `${r.ok ? '✓' : '✗'} ${r.feature}${r.note ? `（${r.note}）` : ''}`).join('\n')}`,
     });
   } else {

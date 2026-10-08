@@ -21,12 +21,30 @@ export function extractHtml(raw) {
 export function staticCheck(html) {
   const issues = [];
   let score = 10;
-  if (!/<!doctype html>/i.test(html)) { score -= 1; issues.push('缺少 <!DOCTYPE html>'); }
-  if (!/<\/html>\s*$/i.test(html)) { score -= 3; issues.push('文档不完整（可能输出被截断）'); }
-  if (!/<title>[^<]+<\/title>/i.test(html)) { score -= 1; issues.push('缺少标题'); }
-  if (!/name=["']viewport["']/i.test(html)) { score -= 2; issues.push('缺少 viewport，移动端会缩放'); }
-  if (!/<script[\s>]/i.test(html)) { score -= 3; issues.push('没有脚本，可能只是静态页面'); }
-  if (html.length < 1500) { score -= 2; issues.push('内容过少'); }
+  if (!/<!doctype html>/i.test(html)) {
+    score -= 1;
+    issues.push('缺少 <!DOCTYPE html>');
+  }
+  if (!/<\/html>\s*$/i.test(html)) {
+    score -= 3;
+    issues.push('文档不完整（可能输出被截断）');
+  }
+  if (!/<title>[^<]+<\/title>/i.test(html)) {
+    score -= 1;
+    issues.push('缺少标题');
+  }
+  if (!/name=["']viewport["']/i.test(html)) {
+    score -= 2;
+    issues.push('缺少 viewport，移动端会缩放');
+  }
+  if (!/<script[\s>]/i.test(html)) {
+    score -= 3;
+    issues.push('没有脚本，可能只是静态页面');
+  }
+  if (html.length < 1500) {
+    score -= 2;
+    issues.push('内容过少');
+  }
   return { score: Math.max(0, score), issues };
 }
 

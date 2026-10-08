@@ -1,0 +1,6 @@
+node_modules
+data
+server/mock/*.html
+public/img
+package-lock.json
+*.md

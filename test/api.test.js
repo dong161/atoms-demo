@@ -11,7 +11,9 @@ const cfg = { mockOnly: true, models: [], plannerModel: '', baseUrl: '', apiKey:
 before(async () => {
   db = await openDb({ databaseUrl: '', sqlitePath: ':memory:' });
   const { app } = await createApp({ db, cfg });
-  server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+  server = await new Promise((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
   base = `http://127.0.0.1:${server.address().port}`;
 });
 after(async () => {
@@ -27,7 +29,11 @@ async function call(method, path, { token, body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   let json = null;
-  try { json = await res.json(); } catch { /* not json */ }
+  try {
+    json = await res.json();
+  } catch {
+    /* not json */
+  }
   return { status: res.status, json };
 }
 
@@ -182,11 +188,14 @@ test('SSE 事件流：text/event-stream，最终出现 end 事件', async () => 
       buf += dec.decode(chunk, { stream: true });
       let i;
       while ((i = buf.indexOf('\n\n')) >= 0) {
-        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
         if (block.startsWith('data:')) events.push(JSON.parse(block.slice(5)));
       }
     }
-  } finally { clearTimeout(deadline); }
+  } finally {
+    clearTimeout(deadline);
+  }
   const types = events.map((e) => e.type);
   assert.ok(types.includes('status'));
   assert.ok(types.includes('adopted'));

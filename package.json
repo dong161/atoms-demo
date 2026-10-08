@@ -5,14 +5,21 @@
   "description": "一句话生成可运行网页应用的 AI 智能体 Demo（多模型赛马 + 自动校验打分 + 对话迭代 + 版本管理）",
   "type": "module",
   "main": "server/index.js",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "express": "^4.21.2",
     "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
   }
 }

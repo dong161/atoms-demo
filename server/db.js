@@ -104,10 +104,19 @@ async function openPg(url) {
   await pool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS attachments TEXT');
   return {
     kind: 'postgres',
-    async all(sql, params = []) { return (await pool.query(sql, params)).rows; },
-    async get(sql, params = []) { return (await pool.query(sql, params)).rows[0]; },
-    async run(sql, params = []) { const r = await pool.query(sql, params); return { changes: r.rowCount }; },
-    async close() { await pool.end(); },
+    async all(sql, params = []) {
+      return (await pool.query(sql, params)).rows;
+    },
+    async get(sql, params = []) {
+      return (await pool.query(sql, params)).rows[0];
+    },
+    async run(sql, params = []) {
+      const r = await pool.query(sql, params);
+      return { changes: r.rowCount };
+    },
+    async close() {
+      await pool.end();
+    },
   };
 }
 
@@ -117,20 +126,38 @@ async function openSqlite(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
-  const columns = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+  const columns = db
+    .prepare('PRAGMA table_info(users)')
+    .all()
+    .map((c) => c.name);
   if (!columns.includes('email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   if (!columns.includes('password_hash')) db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
-  const projectColumns=db.prepare('PRAGMA table_info(projects)').all().map(c=>c.name);
-  if(!projectColumns.includes('theme_id'))db.exec('ALTER TABLE projects ADD COLUMN theme_id TEXT');
-  if(!projectColumns.includes('attachments'))db.exec('ALTER TABLE projects ADD COLUMN attachments TEXT');
+  const projectColumns = db
+    .prepare('PRAGMA table_info(projects)')
+    .all()
+    .map((c) => c.name);
+  if (!projectColumns.includes('theme_id')) db.exec('ALTER TABLE projects ADD COLUMN theme_id TEXT');
+  if (!projectColumns.includes('attachments')) db.exec('ALTER TABLE projects ADD COLUMN attachments TEXT');
   const conv = (sql) => sql.replace(/\$\d+/g, '?');
   const norm = (row) => (row ? { ...row } : row);
   return {
     kind: 'sqlite',
-    async all(sql, params = []) { return db.prepare(conv(sql)).all(...params).map(norm); },
-    async get(sql, params = []) { return norm(db.prepare(conv(sql)).get(...params)); },
-    async run(sql, params = []) { const r = db.prepare(conv(sql)).run(...params); return { changes: Number(r.changes) }; },
-    async close() { db.close(); },
+    async all(sql, params = []) {
+      return db
+        .prepare(conv(sql))
+        .all(...params)
+        .map(norm);
+    },
+    async get(sql, params = []) {
+      return norm(db.prepare(conv(sql)).get(...params));
+    },
+    async run(sql, params = []) {
+      const r = db.prepare(conv(sql)).run(...params);
+      return { changes: Number(r.changes) };
+    },
+    async close() {
+      db.close();
+    },
   };
 }

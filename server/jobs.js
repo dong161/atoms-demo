@@ -10,10 +10,20 @@ export const newId = () => crypto.randomUUID();
 const now = () => Date.now();
 
 export class JobHub {
-  constructor() { this.jobs = new Map(); }
+  constructor() {
+    this.jobs = new Map();
+  }
 
   create(projectId) {
-    const job = { id: newId(), projectId, status: 'running', events: [], subscribers: new Set(), ctrl: new AbortController(), startedAt: now() };
+    const job = {
+      id: newId(),
+      projectId,
+      status: 'running',
+      events: [],
+      subscribers: new Set(),
+      ctrl: new AbortController(),
+      startedAt: now(),
+    };
     this.jobs.set(job.id, job);
     return job;
   }
@@ -23,7 +33,8 @@ export class JobHub {
     // 进度事件只保留最新一条，避免回放时间过长
     if (type === 'progress') {
       const i = job.events.findIndex((e) => e.type === 'progress' && e.entryId === data.entryId);
-      if (i >= 0) job.events[i] = ev; else job.events.push(ev);
+      if (i >= 0) job.events[i] = ev;
+      else job.events.push(ev);
     } else {
       job.events.push(ev);
     }
@@ -44,10 +55,15 @@ export class JobHub {
 
 export async function addMessage(db, projectId, role, kind, content, meta) {
   const msg = { id: newId(), project_id: projectId, role, kind, content, meta: meta ? JSON.stringify(meta) : null, created_at: now() };
-  await db.run(
-    'INSERT INTO messages (id, project_id, role, kind, content, meta, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-    [msg.id, msg.project_id, msg.role, msg.kind, msg.content, msg.meta, msg.created_at],
-  );
+  await db.run('INSERT INTO messages (id, project_id, role, kind, content, meta, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
+    msg.id,
+    msg.project_id,
+    msg.role,
+    msg.kind,
+    msg.content,
+    msg.meta,
+    msg.created_at,
+  ]);
   return { ...msg, meta: meta ?? null };
 }
 
@@ -55,8 +71,16 @@ export async function createVersion(db, { projectId, html, model, source, score,
   const row = await db.get('SELECT COALESCE(MAX(seq), 0) AS m FROM versions WHERE project_id = $1', [projectId]);
   const seq = Number(row?.m ?? 0) + 1;
   const v = {
-    id: newId(), project_id: projectId, seq, title: title || titleFromHtml(html), html, model: model ?? null,
-    source, score: score ?? null, score_detail: scoreDetail ? JSON.stringify(scoreDetail) : null, created_at: now(),
+    id: newId(),
+    project_id: projectId,
+    seq,
+    title: title || titleFromHtml(html),
+    html,
+    model: model ?? null,
+    source,
+    score: score ?? null,
+    score_detail: scoreDetail ? JSON.stringify(scoreDetail) : null,
+    created_at: now(),
   };
   await db.run(
     'INSERT INTO versions (id, project_id, seq, title, html, model, source, score, score_detail, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
@@ -74,12 +98,22 @@ export async function adoptEntry(db, entryId) {
   if (race.adopted_entry_id === entryId) throw Object.assign(new Error('这个候选已经采用过了'), { status: 409 });
   // 允许在同一轮里改选另一个候选：每次采用都生成一个新版本，历史可回退
   const version = await createVersion(db, {
-    projectId: race.project_id, html: entry.html, model: entry.model, source: entry.source || entry.model,
-    score: entry.score, scoreDetail: entry.score_detail ? JSON.parse(entry.score_detail) : null,
+    projectId: race.project_id,
+    html: entry.html,
+    model: entry.model,
+    source: entry.source || entry.model,
+    score: entry.score,
+    scoreDetail: entry.score_detail ? JSON.parse(entry.score_detail) : null,
   });
   await db.run('UPDATE races SET adopted_entry_id = $1, status = $2 WHERE id = $3', [entryId, 'adopted', race.id]);
   const msg = await addMessage(db, race.project_id, 'alex', 'version', `Version ${version.seq}: ${version.title}`, {
-    versionId: version.id, seq: version.seq, title: version.title, model: entry.model, source: entry.source, raceId: race.id, entryId,
+    versionId: version.id,
+    seq: version.seq,
+    title: version.title,
+    model: entry.model,
+    source: entry.source,
+    raceId: race.id,
+    entryId,
   });
   return { version: { id: version.id, seq: version.seq, title: version.title }, message: msg };
 }
@@ -88,9 +122,9 @@ export async function adoptEntry(db, entryId) {
  * 跑一场赛马。mode = 'create'（首轮，先由 Mike 出方案）| 'edit'（在当前版本上修改）。
  */
 export async function runRace({ db, hub, cfg, job, project, instruction, mode, models }) {
-  const files=JSON.parse(project.attachments||'[]');
-  const themeId=project.theme_id||'default';
-  const prompt=referencePrompt(project.prompt,files);
+  const files = JSON.parse(project.attachments || '[]');
+  const themeId = project.theme_id || 'default';
+  const prompt = referencePrompt(project.prompt, files);
   // 附件只发给模型；对话消息、赛马标题和验收清单保留用户的原话
   const modelInstruction = referencePrompt(instruction, files);
   const signal = job.ctrl.signal;
@@ -108,7 +142,12 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
     if (mode === 'create') {
       emit('status', { agent: 'mike', text: 'Mike 正在拆解需求…' });
       plan = await planProject({ cfg, prompt: modelInstruction, signal });
-      await db.run('UPDATE projects SET plan = $1, title = $2, updated_at = $3 WHERE id = $4', [JSON.stringify(plan), plan.title, now(), project.id]);
+      await db.run('UPDATE projects SET plan = $1, title = $2, updated_at = $3 WHERE id = $4', [
+        JSON.stringify(plan),
+        plan.title,
+        now(),
+        project.id,
+      ]);
       emit('project', { title: plan.title });
       await say('mike', 'plan', plan.summary, { plan });
     } else {
@@ -119,35 +158,86 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
 
     const lineup = models.length ? models : ['mock'];
     const raceId = newId();
-    await db.run(
-      'INSERT INTO races (id, project_id, instruction, base_version_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [raceId, project.id, instruction, mode === 'edit' ? project.current_version_id : null, 'running', now()],
-    );
+    await db.run('INSERT INTO races (id, project_id, instruction, base_version_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [
+      raceId,
+      project.id,
+      instruction,
+      mode === 'edit' ? project.current_version_id : null,
+      'running',
+      now(),
+    ]);
     const entries = lineup.map((model) => ({ id: newId(), model }));
     for (const e of entries) {
-      await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [e.id, raceId, e.model, 'running', now()]);
+      await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [
+        e.id,
+        raceId,
+        e.model,
+        'running',
+        now(),
+      ]);
     }
-    const handoff = lineup.length > 1
-      ? `@Alex 赛马模式：${lineup.length} 路模型并行${mode === 'create' ? '开发' : '修改'}，完成后自动校验打分，择优采用。`
-      : `@Alex ${mode === 'create' ? '按方案开发' : `修改：${instruction}`}`;
+    const handoff =
+      lineup.length > 1
+        ? `@Alex 赛马模式：${lineup.length} 路模型并行${mode === 'create' ? '开发' : '修改'}，完成后自动校验打分，择优采用。`
+        : `@Alex ${mode === 'create' ? '按方案开发' : `修改：${instruction}`}`;
     await say('mike', 'race', handoff, { raceId, mode, entries: entries.map((e) => ({ id: e.id, model: e.model })) });
 
-    const results = await Promise.all(entries.map((e, i) => buildEntry({ db, cfg, emit, signal, entry: e, variant: i, mode, plan, prompt, baseHtml, instruction: modelInstruction, reviewInstruction: instruction, themeId })));
+    const results = await Promise.all(
+      entries.map((e, i) =>
+        buildEntry({
+          db,
+          cfg,
+          emit,
+          signal,
+          entry: e,
+          variant: i,
+          mode,
+          plan,
+          prompt,
+          baseHtml,
+          instruction: modelInstruction,
+          reviewInstruction: instruction,
+          themeId,
+        }),
+      ),
+    );
 
     if (signal.aborted) throw new Error('已取消');
     let ok = results.filter((r) => r.ok);
     if (ok.length === 0 && mode === 'edit') {
       // 修改失败时不能用演示数据冒充修改结果：保留当前版本，让用户重试
       await db.run("UPDATE races SET status = 'failed' WHERE id = $1", [raceId]);
-      throw new Error(`所有模型都没有完成这次修改（${results.map((r) => r.error).filter(Boolean)[0] || '未知原因'}），当前版本保持不变，请稍后重试`);
+      throw new Error(
+        `所有模型都没有完成这次修改（${results.map((r) => r.error).filter(Boolean)[0] || '未知原因'}），当前版本保持不变，请稍后重试`,
+      );
     }
     if (ok.length === 0) {
       // 首轮生成全部失败：用演示数据兜底，保证流程能走完（候选卡片会标注「已用演示兜底」）
       emit('status', { agent: 'alex', text: '所有模型调用失败，已切换到演示数据兜底' });
       const fb = { id: newId(), model: 'mock' };
-      await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [fb.id, raceId, fb.model, 'running', now()]);
+      await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [
+        fb.id,
+        raceId,
+        fb.model,
+        'running',
+        now(),
+      ]);
       emit('entry', { raceId, entry: { id: fb.id, model: 'mock', status: 'running' } });
-      const r = await buildEntry({ db, cfg: { ...cfg, mockOnly: true }, emit, signal, entry: fb, variant: 0, mode, plan, prompt, baseHtml, instruction: modelInstruction, reviewInstruction: instruction, themeId });
+      const r = await buildEntry({
+        db,
+        cfg: { ...cfg, mockOnly: true },
+        emit,
+        signal,
+        entry: fb,
+        variant: 0,
+        mode,
+        plan,
+        prompt,
+        baseHtml,
+        instruction: modelInstruction,
+        reviewInstruction: instruction,
+        themeId,
+      });
       ok = r.ok ? [r] : [];
     }
     if (ok.length === 0) throw new Error('生成失败，请稍后重试');
@@ -165,12 +255,31 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
     const cancelled = signal.aborted;
     await say('system', 'error', cancelled ? '已停止生成，已完成的部分会保留。' : `出错了：${e.message}`).catch(() => {});
     await db.run("UPDATE races SET status = 'failed' WHERE project_id = $1 AND status = 'running'", [project.id]).catch(() => {});
-    await db.run("UPDATE race_entries SET status = 'failed', error = $1 WHERE status = 'running' AND race_id IN (SELECT id FROM races WHERE project_id = $2)", [cancelled ? '已取消' : e.message, project.id]).catch(() => {});
+    await db
+      .run(
+        "UPDATE race_entries SET status = 'failed', error = $1 WHERE status = 'running' AND race_id IN (SELECT id FROM races WHERE project_id = $2)",
+        [cancelled ? '已取消' : e.message, project.id],
+      )
+      .catch(() => {});
     hub.finish(job, cancelled ? 'cancelled' : 'failed');
   }
 }
 
-async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, prompt, baseHtml, instruction, reviewInstruction = instruction, themeId }) {
+async function buildEntry({
+  db,
+  cfg,
+  emit,
+  signal,
+  entry,
+  variant,
+  mode,
+  plan,
+  prompt,
+  baseHtml,
+  instruction,
+  reviewInstruction = instruction,
+  themeId,
+}) {
   const started = now();
   let chars = 0;
   let tail = '';
@@ -178,32 +287,73 @@ async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, p
   emit('progress', { entryId: entry.id, chars: 0, tail: '', status: 'running' });
   try {
     const { html, source } = await engineerBuild({
-      cfg, model: entry.model, mode, plan, prompt, baseHtml, instruction, themeId, variant, signal,
+      cfg,
+      model: entry.model,
+      mode,
+      plan,
+      prompt,
+      baseHtml,
+      instruction,
+      themeId,
+      variant,
+      signal,
       onDelta: (d) => {
         chars += d.length;
         tail = (tail + d).slice(-400);
-        if (now() - lastEmit > 250) { lastEmit = now(); emit('progress', { entryId: entry.id, chars, tail, status: 'running' }); }
+        if (now() - lastEmit > 250) {
+          lastEmit = now();
+          emit('progress', { entryId: entry.id, chars, tail, status: 'running' });
+        }
       },
       onRetry: (err, n) => emit('status', { agent: 'alex', entryId: entry.id, text: `${entry.model} 第 ${n} 次重试：${err.message}` }),
-      onReset: () => { chars = 0; tail = ''; },
+      onReset: () => {
+        chars = 0;
+        tail = '';
+      },
     });
     const check = staticCheck(html);
     const duration = now() - started;
     // 代码写完后由 Mike 对照需求逐条验收（计入「需求覆盖」得分）
-    emit('progress', { entryId: entry.id, chars: html.length, tail: '代码已完成，Mike 正在对照需求逐条验收…', status: 'running', reviewing: true });
+    emit('progress', {
+      entryId: entry.id,
+      chars: html.length,
+      tail: '代码已完成，Mike 正在对照需求逐条验收…',
+      status: 'running',
+      reviewing: true,
+    });
     const review = await reviewBuild({
       cfg: source === 'mock' ? { ...cfg, mockOnly: true } : cfg,
-      html, checklist: reviewChecklist({ mode, plan, instruction: reviewInstruction }), signal,
+      html,
+      checklist: reviewChecklist({ mode, plan, instruction: reviewInstruction }),
+      signal,
     });
     const detail = { static: check, review };
-    await db.run(
-      'UPDATE race_entries SET status = $1, html = $2, source = $3, duration_ms = $4, score_detail = $5 WHERE id = $6',
-      ['done', html, source, duration, JSON.stringify(detail), entry.id],
-    );
-    emit('progress', { entryId: entry.id, chars: html.length, tail: '', status: 'done', durationMs: duration, source, static: check, review });
+    await db.run('UPDATE race_entries SET status = $1, html = $2, source = $3, duration_ms = $4, score_detail = $5 WHERE id = $6', [
+      'done',
+      html,
+      source,
+      duration,
+      JSON.stringify(detail),
+      entry.id,
+    ]);
+    emit('progress', {
+      entryId: entry.id,
+      chars: html.length,
+      tail: '',
+      status: 'done',
+      durationMs: duration,
+      source,
+      static: check,
+      review,
+    });
     return { ok: true, id: entry.id };
   } catch (e) {
-    await db.run('UPDATE race_entries SET status = $1, error = $2, duration_ms = $3 WHERE id = $4', ['failed', e.message, now() - started, entry.id]);
+    await db.run('UPDATE race_entries SET status = $1, error = $2, duration_ms = $3 WHERE id = $4', [
+      'failed',
+      e.message,
+      now() - started,
+      entry.id,
+    ]);
     emit('progress', { entryId: entry.id, chars, tail: '', status: 'failed', error: e.message });
     return { ok: false, id: entry.id, error: e.message };
   }

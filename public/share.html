@@ -1,56 +1,89 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atoms Demo 应用</title>
-<link rel="stylesheet" href="/css/style.css">
-<style>body { overflow: hidden; } .frame-wrap { height: 100%; }</style>
-</head>
-<body>
-<div class="share-bar"><span id="bar-title">加载中…</span><a href="/" target="_blank" rel="noopener">◎ 用 Atoms Demo 做一个</a></div>
-<div class="share-main"><div class="frame-wrap" id="frame"><div class="placeholder"><span class="spinner"></span></div></div></div>
-<script type="module">
-  import { mountPreview } from '/js/sandbox.js';
-  const frame = document.getElementById('frame');
-  const fail = (msg) => { frame.innerHTML = `<div class="placeholder"><div class="big">🔗</div><h3>打不开这个应用</h3><p>${msg}</p></div>`; document.getElementById('bar-title').textContent = 'Atoms Demo'; };
-  const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
-  async function json(url, opts = {}) {
-    const res = await fetch(url, opts);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `请求失败（${res.status}）`);
-    return data;
-  }
-  async function main() {
-    const slug = location.pathname.match(/^\/s\/([\w-]+)/)?.[1];
-    let html, title, kv;
-    if (slug) {
-      // 公开分享：每个访客一份独立数据（访客 ID 存在本浏览器）
-      let visitor = read('atoms.visitor');
-      if (!visitor) {
-        visitor = crypto.randomUUID().replace(/-/g, '');
-        try { localStorage.setItem('atoms.visitor', JSON.stringify(visitor)); } catch { /* 隐私模式下仅本次有效 */ }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atoms Demo 应用</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      body {
+        overflow: hidden;
       }
-      const d = await json(`/api/share/${slug}`);
-      html = d.html; title = d.title;
-      const base = `/api/share/${slug}/kv?visitor=${visitor}`;
-      kv = { load: async () => (await json(base)).data, save: (body) => json(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) };
-    } else {
-      // 项目所有者在新标签页里打开预览
-      const q = new URLSearchParams(location.search);
-      const token = read('atoms.token');
-      if (!token) return fail('请先在 Atoms Demo 中登录。');
-      const auth = { Authorization: `Bearer ${token}` };
-      const d = await json(`/api/versions/${encodeURIComponent(q.get('version'))}/html`, { headers: auth });
-      html = d.html; title = `${d.title} · Version ${d.seq}`;
-      const base = `/api/projects/${encodeURIComponent(q.get('project'))}/kv`;
-      kv = { load: async () => (await json(base, { headers: auth })).data, save: (body) => json(base, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) };
-    }
-    document.title = title;
-    document.getElementById('bar-title').textContent = title;
-    await mountPreview(frame, html, { kv });
-  }
-  main().catch((e) => fail(e.message));
-</script>
-</body>
+      .frame-wrap {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="share-bar"><span id="bar-title">加载中…</span><a href="/" target="_blank" rel="noopener">◎ 用 Atoms Demo 做一个</a></div>
+    <div class="share-main">
+      <div class="frame-wrap" id="frame">
+        <div class="placeholder"><span class="spinner"></span></div>
+      </div>
+    </div>
+    <script type="module">
+      import { mountPreview } from '/js/sandbox.js';
+      const frame = document.getElementById('frame');
+      const fail = (msg) => {
+        frame.innerHTML = `<div class="placeholder"><div class="big">🔗</div><h3>打不开这个应用</h3><p>${msg}</p></div>`;
+        document.getElementById('bar-title').textContent = 'Atoms Demo';
+      };
+      const read = (k) => {
+        try {
+          return JSON.parse(localStorage.getItem(k));
+        } catch {
+          return null;
+        }
+      };
+      async function json(url, opts = {}) {
+        const res = await fetch(url, opts);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `请求失败（${res.status}）`);
+        return data;
+      }
+      async function main() {
+        const slug = location.pathname.match(/^\/s\/([\w-]+)/)?.[1];
+        let html, title, kv;
+        if (slug) {
+          // 公开分享：每个访客一份独立数据（访客 ID 存在本浏览器）
+          let visitor = read('atoms.visitor');
+          if (!visitor) {
+            visitor = crypto.randomUUID().replace(/-/g, '');
+            try {
+              localStorage.setItem('atoms.visitor', JSON.stringify(visitor));
+            } catch {
+              /* 隐私模式下仅本次有效 */
+            }
+          }
+          const d = await json(`/api/share/${slug}`);
+          html = d.html;
+          title = d.title;
+          const base = `/api/share/${slug}/kv?visitor=${visitor}`;
+          kv = {
+            load: async () => (await json(base)).data,
+            save: (body) => json(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+          };
+        } else {
+          // 项目所有者在新标签页里打开预览
+          const q = new URLSearchParams(location.search);
+          const token = read('atoms.token');
+          if (!token) return fail('请先在 Atoms Demo 中登录。');
+          const auth = { Authorization: `Bearer ${token}` };
+          const d = await json(`/api/versions/${encodeURIComponent(q.get('version'))}/html`, { headers: auth });
+          html = d.html;
+          title = `${d.title} · Version ${d.seq}`;
+          const base = `/api/projects/${encodeURIComponent(q.get('project'))}/kv`;
+          kv = {
+            load: async () => (await json(base, { headers: auth })).data,
+            save: (body) =>
+              json(base, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+          };
+        }
+        document.title = title;
+        document.getElementById('bar-title').textContent = title;
+        await mountPreview(frame, html, { kv });
+      }
+      main().catch((e) => fail(e.message));
+    </script>
+  </body>
 </html>
