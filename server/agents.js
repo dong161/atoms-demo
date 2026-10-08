@@ -85,21 +85,37 @@ function editMessages(baseHtml, instruction) {
  * 生成一个候选结果。mode=create 用 plan 从零写；mode=edit 在 baseHtml 上改。
  * 返回 { html, source }，source 为实际使用的模型名或 'mock'。
  */
-export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, instruction, variant = 0, signal, onDelta, onRetry }) {
+export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, instruction, variant = 0, signal, onDelta, onRetry, onReset }) {
   if (cfg.mockOnly || model === 'mock') {
     const html = mode === 'edit' ? mockEdit(baseHtml, instruction) : mockCreate(prompt, plan, variant);
     await fakeStream(html, onDelta, signal);
     return { html, source: 'mock' };
   }
   const messages = mode === 'edit' ? editMessages(baseHtml, instruction) : createMessages(plan, prompt);
-  const raw = await streamChatWithRetry({
-    cfg, model, messages, signal, onDelta, onRetry,
-    temperature: 0.6 + (variant % 3) * 0.1,
-    maxTokens: 24000,
-  });
-  const html = extractHtml(raw);
-  if (!/<html[\s>]/i.test(html)) throw new Error('模型没有输出有效的 HTML');
-  return { html, source: model };
+  const needScript = mode !== 'edit' || /<script[\s>]/i.test(baseHtml || '');
+  let lastProblem = '';
+  // 输出被截断/不完整时整段重来一次（最多 2 次尝试）
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) { onRetry?.(new Error(lastProblem), attempt - 1); onReset?.(); }
+    const raw = await streamChatWithRetry({
+      cfg, model, messages, signal, onDelta, onRetry, onReset,
+      temperature: 0.6 + (variant % 3) * 0.1,
+      maxTokens: 24000,
+    });
+    const html = extractHtml(raw);
+    lastProblem = htmlProblem(html, needScript);
+    if (!lastProblem) return { html, source: model };
+    if (signal?.aborted) break;
+  }
+  throw new Error(`生成结果不完整：${lastProblem}`);
+}
+
+/** 判断生成的 HTML 是否是一个完整可运行的文档，返回问题描述或空字符串。 */
+export function htmlProblem(html, needScript = true) {
+  if (!/<html[\s>]/i.test(html)) return '没有输出有效的 HTML';
+  if (!/<\/html>\s*$/i.test(html)) return '输出被截断（缺少 </html>）';
+  if (needScript && !/<script[\s>]/i.test(html)) return '缺少脚本，应用无法交互';
+  return '';
 }
 
 // ---------------- Mike：对照需求验收 ----------------

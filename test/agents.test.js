@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan, pickTemplate, mockCreate, mockEdit, mockPlan } from '../server/agents.js';
+import { htmlProblem } from '../server/agents.js';
 import { staticCheck } from '../server/html.js';
 
 const primaryOf = (html) => html.match(/--primary:\s*(#[0-9a-fA-F]+)/)?.[1];
@@ -84,4 +85,12 @@ test('mockEdit: 无颜色词不改主色；暗色会注入样式', () => {
   const dark = mockEdit(base, '改成暗色');
   assert.match(dark, /background:#0f172a/);
   assert.match(dark, /<\/html>\s*$/);
+});
+
+test('htmlProblem: 识别截断和缺少脚本的输出', () => {
+  const ok = '<!DOCTYPE html><html><head></head><body><script>1</script></body></html>';
+  assert.equal(htmlProblem(ok), '');
+  assert.match(htmlProblem('<!DOCTYPE html><html><body><header><svg'), /截断/);
+  assert.match(htmlProblem('<html><body>hi</body></html>'), /脚本/);
+  assert.equal(htmlProblem('<html><body>hi</body></html>', false), '');
 });

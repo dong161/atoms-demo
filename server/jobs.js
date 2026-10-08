@@ -130,8 +130,13 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
 
     if (signal.aborted) throw new Error('已取消');
     let ok = results.filter((r) => r.ok);
+    if (ok.length === 0 && mode === 'edit') {
+      // 修改失败时不能用演示数据冒充修改结果：保留当前版本，让用户重试
+      await db.run("UPDATE races SET status = 'failed' WHERE id = $1", [raceId]);
+      throw new Error(`所有模型都没有完成这次修改（${results.map((r) => r.error).filter(Boolean)[0] || '未知原因'}），当前版本保持不变，请稍后重试`);
+    }
     if (ok.length === 0) {
-      // 所有模型都失败：用演示数据兜底，保证流程能走完
+      // 首轮生成全部失败：用演示数据兜底，保证流程能走完（候选卡片会标注「已用演示兜底」）
       emit('status', { agent: 'alex', text: '所有模型调用失败，已切换到演示数据兜底' });
       const fb = { id: newId(), model: 'mock' };
       await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [fb.id, raceId, fb.model, 'running', now()]);
@@ -174,6 +179,7 @@ async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, p
         if (now() - lastEmit > 250) { lastEmit = now(); emit('progress', { entryId: entry.id, chars, tail, status: 'running' }); }
       },
       onRetry: (err, n) => emit('status', { agent: 'alex', entryId: entry.id, text: `${entry.model} 第 ${n} 次重试：${err.message}` }),
+      onReset: () => { chars = 0; tail = ''; },
     });
     const check = staticCheck(html);
     const duration = now() - started;

@@ -17,10 +17,11 @@ export function llmConfig(env = process.env) {
 }
 
 export class LlmError extends Error {
-  constructor(message, { retryable = false, status } = {}) {
+  constructor(message, { retryable = false, status, partial = false } = {}) {
     super(message);
     this.retryable = retryable;
     this.status = status;
+    this.partial = partial;
   }
 }
 
@@ -65,6 +66,7 @@ export async function streamChat({ cfg, model, messages, maxTokens = 16000, temp
     const decoder = new TextDecoder();
     let buf = '';
     let full = '';
+    let finished = false;
     try {
       for (;;) {
         const { done, value } = await reader.read();
@@ -81,6 +83,7 @@ export async function streamChat({ cfg, model, messages, maxTokens = 16000, temp
           let json;
           try { json = JSON.parse(data); } catch { continue; }
           if (json.error) throw new LlmError(`模型返回错误: ${JSON.stringify(json.error).slice(0, 200)}`, { retryable: true });
+          if (json.choices?.[0]?.finish_reason) finished = true;
           const delta = json.choices?.[0]?.delta?.content ?? json.choices?.[0]?.message?.content ?? '';
           if (delta) {
             full += delta;
@@ -92,6 +95,8 @@ export async function streamChat({ cfg, model, messages, maxTokens = 16000, temp
       throw asLlmError(e, ctrl);
     }
     if (!full.trim()) throw new LlmError('模型返回了空内容', { retryable: true });
+    // 上游连接中途断开时流会直接结束、没有 finish_reason，这时的内容是不完整的
+    if (!finished) throw new LlmError('模型输出中途断开', { retryable: true, partial: true });
     return full;
   } finally {
     clearTimeout(hardTimer);
@@ -115,9 +120,10 @@ export async function streamChatWithRetry(opts, { retries = 1 } = {}) {
     try {
       return await streamChat({ ...opts, onDelta: (d) => { received = true; opts.onDelta?.(d); } });
     } catch (e) {
-      if (attempt >= retries || !e.retryable || received || opts.signal?.aborted) throw e;
+      if (attempt >= retries || !e.retryable || (received && !e.partial) || opts.signal?.aborted) throw e;
       attempt += 1;
       opts.onRetry?.(e, attempt);
+      opts.onReset?.();
       await new Promise((r) => setTimeout(r, 1500 * attempt));
     }
   }

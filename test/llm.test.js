@@ -8,9 +8,11 @@ let baseUrl;
 let calls;
 let handler;
 
-const sse = (res, parts) => {
+const sse = (res, parts, { finish = true } = {}) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   for (const p of parts) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: p } }] })}\n\n`);
+  if (!finish) return res.end(); // 模拟上游中途断开：没有 finish_reason
+  res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
   res.end('data: [DONE]\n\n');
 };
 
@@ -94,4 +96,18 @@ test('llmConfig: 完整配置解析', () => {
   assert.equal(c.plannerModel, 'a');
   assert.equal(c.apiKey, 'k');
   assert.equal(llmConfig({ LLM_BASE_URL: 'http://x', LLM_MODELS: 'a', MOCK_MODE: '1' }).mockOnly, true);
+});
+
+test('streamChat: 没有 finish_reason 就结束的流视为中途断开（partial、可重试）', async () => {
+  handler = (req, res) => sse(res, ['<html><body>半截'], { finish: false });
+  await assert.rejects(streamChat({ cfg: cfg(), model: 'm', messages: msgs }), (e) => e instanceof LlmError && e.retryable && e.partial);
+});
+
+test('streamChatWithRetry: 输出中途断开后整段重来，并通知 onReset', async () => {
+  handler = (req, res) => (calls === 1 ? sse(res, ['半截'], { finish: false }) : sse(res, ['完整']));
+  let resets = 0;
+  const full = await streamChatWithRetry({ cfg: cfg(), model: 'm', messages: msgs, onReset: () => { resets += 1; } });
+  assert.equal(full, '完整');
+  assert.equal(calls, 2);
+  assert.equal(resets, 1);
 });
