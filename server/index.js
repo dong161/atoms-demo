@@ -1,5 +1,8 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { promisify } from 'node:util';
+const scryptAsync = promisify(crypto.scrypt);
+const dummySalt = crypto.randomBytes(16).toString('hex');
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { openDb } from './db.js';
@@ -40,6 +43,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const jobLimit = rateLimiter(JOBS_PER_HOUR, 3600_000);
   const signupLimit = rateLimiter(20, 3600_000);
+  const loginLimit = rateLimiter(30, 3600_000);
   const shareKvLimit = rateLimiter(120, 60_000);
   const tooMany = (res, msg) => res.status(429).json({ error: msg });
 
@@ -54,6 +58,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
       user = await db.get('SELECT id, name, created_at FROM users WHERE token = $1', [token]);
       if (user) await db.run('UPDATE users SET token = $1 WHERE id = $2', [hashToken(token), user.id]);
     }
+    if (!user) user = await db.get('SELECT u.id, u.name, u.created_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = $1 AND s.expires_at > $2', [hashToken(token), Date.now()]);
     if (!user) return res.status(401).json({ error: '登录已失效，请重新创建账号或输入恢复码' });
     req.user = user;
     next();
@@ -83,6 +88,43 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     const user = { id: newId(), name, token: crypto.randomBytes(24).toString('base64url'), created_at: Date.now() };
     await db.run('INSERT INTO users (id, name, token, created_at) VALUES ($1,$2,$3,$4)', [user.id, user.name, hashToken(user.token), user.created_at]);
     res.json({ user: { id: user.id, name: user.name }, token: user.token });
+  }));
+
+  // 邮箱仅作为账号标识；不宣称邮件验证或密码找回。
+  app.post('/api/auth/register', wrap(async (req, res) => {
+    if (!signupLimit(req.ip)) return tooMany(res, '创建账号太频繁，请稍后再试');
+    const name = String(req.body?.name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!name || name.length > 30) return res.status(400).json({ error: '昵称需为1–30个字符' });
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '请输入有效邮箱' });
+    if (password.length < 10 || password.length > 128) return res.status(400).json({ error: '密码需为10–128个字符' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    const digest = await scryptAsync(password, salt, 64);
+    const token = crypto.randomBytes(24).toString('base64url');
+    const user = { id: newId(), name, email };
+    try {
+      await db.run('INSERT INTO users (id,name,token,created_at,email,password_hash) VALUES ($1,$2,$3,$4,$5,$6)', [user.id,name,hashToken(token),Date.now(),email,`scrypt:${salt}:${digest.toString('hex')}`]);
+    } catch (e) {
+      if (e.code === '23505' || String(e.message).includes('UNIQUE constraint failed')) return res.status(409).json({ error: '此邮箱已注册，请登录' });
+      throw e;
+    }
+    res.json({ user, token });
+  }));
+  app.post('/api/auth/login', wrap(async (req, res) => {
+    if (!loginLimit(req.ip)) return tooMany(res, '登录尝试过多，请一小时后再试');
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (email.length > 254 || password.length > 128) return res.status(400).json({ error: '登录信息格式不正确' });
+    const user = await db.get('SELECT id,name,email,password_hash FROM users WHERE email = $1', [email]);
+    const parts = user?.password_hash?.split(':');
+    const digest = await scryptAsync(password, parts?.[1] || dummySalt, 64);
+    const expected = Buffer.from(parts?.[2] || '0'.repeat(128), 'hex');
+    if (!user || !parts || expected.length !== digest.length || !crypto.timingSafeEqual(expected,digest)) return res.status(401).json({ error: '邮箱或密码不正确' });
+    const token = crypto.randomBytes(24).toString('base64url');
+    await db.run('DELETE FROM sessions WHERE expires_at <= $1', [Date.now()]);
+    await db.run('INSERT INTO sessions (token,user_id,expires_at) VALUES ($1,$2,$3)', [hashToken(token),user.id,Date.now()+7*86400_000]);
+    res.json({ user: { id:user.id,name:user.name,email:user.email }, token });
   }));
 
   app.get('/api/me', wrap(auth), (req, res) => res.json({ user: req.user }));

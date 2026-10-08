@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   token TEXT NOT NULL UNIQUE,
   created_at BIGINT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -95,6 +96,9 @@ async function openPg(url) {
     max: 5,
   });
   await pool.query(SCHEMA);
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
   return {
     kind: 'postgres',
     async all(sql, params = []) { return (await pool.query(sql, params)).rows; },
@@ -110,6 +114,10 @@ async function openSqlite(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  const columns = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+  if (!columns.includes('email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  if (!columns.includes('password_hash')) db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
   const conv = (sql) => sql.replace(/\$\d+/g, '?');
   const norm = (row) => (row ? { ...row } : row);
   return {
