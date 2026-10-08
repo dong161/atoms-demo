@@ -1,0 +1,8 @@
+{
+  "upstream": "http://127.0.0.1:8317",
+  "upstreamKey": "<本机模型服务的 key，不要提交>",
+  "token": "<随机生成的网关令牌，与 Render 上的 LLM_API_KEY 相同>",
+  "models": ["grok-4.7-build-fast", "claude-sonnet-4-6", "grok-4.6-low"],
+  "port": 8399,
+  "maxConcurrent": 8
+}
