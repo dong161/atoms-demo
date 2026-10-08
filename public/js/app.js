@@ -1149,14 +1149,16 @@ async function renderPreview(box) {
   $('#adopt-btn') && ($('#adopt-btn').onclick = () => adopt(entryId));
   renderConsole();
 
-  const key = ws.previewKey;
+  // 每次渲染一个递增序号：同一视图可能被连续渲染两次（例如采用后 reload + setView），只有最后一次能挂载
+  const renderSeq = (ws.renderSeq = (ws.renderSeq || 0) + 1);
+  const stale = () => ws.closed || ws.renderSeq !== renderSeq;
   try {
     html = v.type === 'version' ? (await api(`/api/versions/${v.id}/html`)).html : (await api(`/api/race-entries/${v.id}/html`)).html;
   } catch (e) {
-    if (ws.previewKey === key) $('#frame-wrap').innerHTML = `<div class="placeholder"><h3>加载失败</h3><p>${esc(e.message)}</p></div>`;
+    if (!stale()) $('#frame-wrap').innerHTML = `<div class="placeholder"><h3>加载失败</h3><p>${esc(e.message)}</p></div>`;
     return;
   }
-  if (ws.closed || ws.previewKey !== key) return;
+  if (stale()) return;
   ws.consoleLines = [];
   ws.picking = false;
   renderConsole();
@@ -1176,7 +1178,7 @@ async function renderPreview(box) {
     },
   });
   // 加载期间用户可能已切换版本/设备：过期的预览直接销毁，不能覆盖当前引用
-  if (ws.closed || ws.previewKey !== key) return preview.destroy();
+  if (stale()) return preview.destroy();
   ws.preview = preview;
 }
 
@@ -1372,7 +1374,9 @@ async function mountThumb(entryId) {
       thumbCache.set(entryId, html);
     }
     const target = document.querySelector(`[data-thumb="${entryId}"]`);
-    if (!target) return;
+    // 赛马面板会频繁重绘：每个缩略图槽位只挂载一次，避免叠出多个 iframe
+    if (!target || target.dataset.mounted) return;
+    target.dataset.mounted = '1';
     await mountPreview(target, html, {});
     const frame = target.querySelector('iframe');
     const scale = target.clientWidth / 1024;
