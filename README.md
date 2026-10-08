@@ -68,7 +68,7 @@ flowchart LR
 - 前端：原生 ES Modules，无构建步骤、无框架
 - 实时通信：Server-Sent Events（SSE），支持断线后回放
 - 模型接入：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 测试：`node --test`（45 个用例）；CI 为 GitHub Actions
+- 测试：`node --test`（46 个用例）；CI 为 GitHub Actions
 - 部署：Render（Free）+ Neon
 
 ## 本地运行
@@ -79,7 +79,7 @@ flowchart LR
 npm install
 cp .env.example .env   # 不填任何模型配置也能运行，自动进入演示模式
 npm start              # http://localhost:3100
-npm test               # 45 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
+npm test               # 46 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
 ```
 
 不配置 `LLM_*` 时为演示模式：流程完整可用（拆解、赛马、校验、采用、迭代、回退、发布），但生成结果来自 `server/mock/` 下的三个内置模板，修改也只支持换主色和深色模式。配置 `LLM_BASE_URL`、`LLM_MODELS` 后即使用真实模型。本地未设置 `DATABASE_URL` 时数据保存在 `data/atoms-demo.db`。
