@@ -168,7 +168,9 @@ test('SSE 事件流：text/event-stream，最终出现 end 事件', async () => 
   const r = await call('POST', '/api/projects', { token, body: { prompt: '做一个房贷计算器', models: ['mock'] } });
   const { jobId } = r.json;
   const ctrl = new AbortController();
-  const res = await fetch(`${base}/api/jobs/${jobId}/events?token=${encodeURIComponent(token)}`, { signal: ctrl.signal });
+  // 令牌放在 URL 里不再被接受（避免进访问日志），只认请求头
+  assert.equal((await fetch(`${base}/api/jobs/${jobId}/events?token=${encodeURIComponent(token)}`)).status, 401);
+  const res = await fetch(`${base}/api/jobs/${jobId}/events`, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal });
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /text\/event-stream/);
   const events = [];
@@ -193,4 +195,21 @@ test('SSE 事件流：text/event-stream，最终出现 end 事件', async () => 
   // 未鉴权不可订阅
   assert.equal((await fetch(`${base}/api/jobs/${jobId}/events`)).status, 401);
   await waitIdle(token, r.json.project.id);
+});
+
+test('取消发布后旧链接立即失效', async () => {
+  const { token, pid } = state;
+  const pub = (await call('POST', `/api/projects/${pid}/publish`, { token })).json;
+  assert.equal((await call('GET', `/api/share/${pub.slug}`)).status, 200);
+  assert.equal((await call('DELETE', `/api/projects/${pid}/publish`, { token })).status, 200);
+  assert.equal((await call('GET', `/api/share/${pub.slug}`)).status, 404);
+  assert.equal((await call('GET', `/api/share/${pub.slug}/kv?visitor=abcdefgh12`)).status, 404);
+});
+
+test('数据库里不存明文令牌', async () => {
+  const r = (await call('POST', '/api/users', { body: { name: '安全检查' } })).json;
+  const row = await db.get('SELECT token FROM users WHERE id = $1', [r.user.id]);
+  assert.notEqual(row.token, r.token);
+  assert.match(row.token, /^[0-9a-f]{64}$/);
+  assert.equal((await call('GET', '/api/me', { token: r.token })).status, 200);
 });

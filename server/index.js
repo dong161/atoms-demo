@@ -8,6 +8,22 @@ import { JobHub, runRace, adoptEntry, createVersion, addMessage, newId } from '.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_MODELS = 3;
+const JOBS_PER_HOUR = 30;
+const hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+// 简单的内存限流：key 在 windowMs 内最多 limit 次
+function rateLimiter(limit, windowMs) {
+  const hits = new Map();
+  return (key) => {
+    const now = Date.now();
+    const arr = (hits.get(key) || []).filter((t) => now - t < windowMs);
+    if (arr.length >= limit) { hits.set(key, arr); return false; }
+    arr.push(now);
+    hits.set(key, arr);
+    if (hits.size > 5000) for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] > windowMs) hits.delete(k);
+    return true;
+  };
+}
 const KV_MAX_VALUE = 200_000;
 const KV_MAX_KEYS = 200;
 
@@ -22,13 +38,22 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   app.use(express.json({ limit: '2mb' }));
 
   const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+  const jobLimit = rateLimiter(JOBS_PER_HOUR, 3600_000);
+  const signupLimit = rateLimiter(20, 3600_000);
+  const shareKvLimit = rateLimiter(120, 60_000);
+  const tooMany = (res, msg) => res.status(429).json({ error: msg });
 
   // ---------- 账号：轻量注册（昵称 + 设备令牌，令牌可作为恢复码换设备登录） ----------
   async function auth(req, res, next) {
     const h = req.get('authorization') || '';
-    const token = h.startsWith('Bearer ') ? h.slice(7) : req.query.token;
+    const token = h.startsWith('Bearer ') ? h.slice(7) : '';
     if (!token) return res.status(401).json({ error: '请先创建账号' });
-    const user = await db.get('SELECT id, name, created_at FROM users WHERE token = $1', [String(token)]);
+    // 数据库只存令牌的 SHA-256；兼容早期明文存储的账号，命中后顺手升级
+    let user = await db.get('SELECT id, name, created_at FROM users WHERE token = $1', [hashToken(token)]);
+    if (!user) {
+      user = await db.get('SELECT id, name, created_at FROM users WHERE token = $1', [token]);
+      if (user) await db.run('UPDATE users SET token = $1 WHERE id = $2', [hashToken(token), user.id]);
+    }
     if (!user) return res.status(401).json({ error: '登录已失效，请重新创建账号或输入恢复码' });
     req.user = user;
     next();
@@ -52,10 +77,11 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   });
 
   app.post('/api/users', wrap(async (req, res) => {
+    if (!signupLimit(req.ip)) return tooMany(res, '创建账号太频繁，请稍后再试');
     const name = String(req.body?.name || '').trim().slice(0, 30);
     if (!name) return res.status(400).json({ error: '请输入昵称' });
     const user = { id: newId(), name, token: crypto.randomBytes(24).toString('base64url'), created_at: Date.now() };
-    await db.run('INSERT INTO users (id, name, token, created_at) VALUES ($1,$2,$3,$4)', [user.id, user.name, user.token, user.created_at]);
+    await db.run('INSERT INTO users (id, name, token, created_at) VALUES ($1,$2,$3,$4)', [user.id, user.name, hashToken(user.token), user.created_at]);
     res.json({ user: { id: user.id, name: user.name }, token: user.token });
   }));
 
@@ -90,6 +116,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     const prompt = String(req.body?.prompt || '').trim();
     if (prompt.length < 2) return res.status(400).json({ error: '请描述你想做的应用' });
     if (prompt.length > 2000) return res.status(400).json({ error: '描述太长了，请控制在 2000 字以内' });
+    if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
     const t = Date.now();
     const project = { id: newId(), user_id: req.user.id, title: prompt.slice(0, 20), prompt, created_at: t, updated_at: t };
     await db.run(
@@ -151,6 +178,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     if (!text) return res.status(400).json({ error: '请输入修改要求' });
     if (hub.activeFor(p.id)) return res.status(409).json({ error: '上一个任务还在进行中，请稍候或先停止' });
     if (!p.current_version_id) return res.status(409).json({ error: '还没有可修改的版本，请先采用一个候选' });
+    if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
     await db.run('UPDATE projects SET updated_at = $1 WHERE id = $2', [Date.now(), p.id]);
     const message = await addMessage(db, p.id, 'user', 'text', text);
     const job = startJob(p, text, 'edit', pickModels(req.body?.models));
@@ -252,6 +280,15 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     res.json({ slug, url: `/s/${slug}`, seq: v?.seq });
   }));
 
+  app.delete('/api/projects/:id/publish', wrap(auth), wrap(async (req, res) => {
+    const p = await ownProject(req, res);
+    if (!p) return;
+    // 下线并作废旧链接；访客数据一并清理
+    await db.run("DELETE FROM app_kv WHERE project_id = $1 AND scope LIKE 'visitor:%'", [p.id]);
+    await db.run('UPDATE projects SET share_slug = NULL, published_version_id = NULL, updated_at = $1 WHERE id = $2', [Date.now(), p.id]);
+    res.json({ ok: true });
+  }));
+
   app.get('/api/share/:slug', wrap(async (req, res) => {
     const p = await db.get('SELECT id, title, published_version_id FROM projects WHERE share_slug = $1', [req.params.slug]);
     const v = p && (await db.get('SELECT html, seq FROM versions WHERE id = $1', [p.published_version_id]));
@@ -305,6 +342,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     res.json({ data: await kvGet(p.id, scope) });
   }));
   app.post('/api/share/:slug/kv', wrap(async (req, res) => {
+    if (!shareKvLimit(`${req.ip}:${req.params.slug}`)) return tooMany(res, '操作太频繁，请稍后再试');
     const p = await db.get('SELECT id FROM projects WHERE share_slug = $1', [req.params.slug]);
     const scope = visitorScope(req);
     if (!p || !scope) return res.status(404).json({ error: '不存在' });

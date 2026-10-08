@@ -15,7 +15,9 @@ function safeJson(obj) {
 
 export async function buildSrcdoc(html, { data = {}, mode = 'live', channel }) {
   const rt = await loadRuntime();
-  const boot = `<script>window.__ATOMS_INIT__=${safeJson({ data, mode, channel })};</script><script>${rt.replace(/<\/script/gi, '<\\/script')}</script>`;
+  // 禁止生成的应用发起任何网络请求（防止把用户数据外传），只允许内联脚本/样式和 data/blob 资源
+  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'">`;
+  const boot = `${csp}<script>window.__ATOMS_INIT__=${safeJson({ data, mode, channel })};</script><script>${rt.replace(/<\/script/gi, '<\\/script')}</script>`;
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}\n${boot}`);
   if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => `${m}<head>${boot}</head>`);
   return `<!DOCTYPE html><html><head>${boot}</head><body>${html}</body></html>`;

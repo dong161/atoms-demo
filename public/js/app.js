@@ -343,7 +343,7 @@ async function loadProjects() {
 function closeWorkspace() {
   const ws = state.ws;
   if (!ws) return;
-  ws.es?.close();
+  ws.abort?.abort();
   ws.preview?.destroy();
   ws.closed = true;
   state.ws = null;
@@ -562,27 +562,45 @@ function renderComposer() {
 // ---------- 任务事件流 ----------
 function subscribe(jobId) {
   const ws = state.ws;
-  ws.es?.close();
+  ws.abort?.abort();
   ws.jobId = jobId;
   ws.subscribedJob = jobId;
   ws.status = ws.status || '已提交，智能体准备中…';
   renderChat();
   renderComposer();
-  const es = new EventSource(`/api/jobs/${jobId}/events?token=${encodeURIComponent(state.token)}`);
-  ws.es = es;
-  let ended = false;
-  es.onmessage = (e) => {
-    if (ws.closed) return es.close();
-    const ev = JSON.parse(e.data);
-    handleEvent(ev);
-    if (ev.type === 'end') { ended = true; es.close(); }
-  };
-  es.onerror = () => {
-    es.close();
-    if (ws.closed || ended) return;
+  const ctrl = new AbortController();
+  ws.abort = ctrl;
+  // 用 fetch 读事件流，令牌放在请求头里（EventSource 只能把令牌放进 URL）
+  (async () => {
+    let ended = false;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/events`, { headers: { Authorization: `Bearer ${state.token}` }, signal: ctrl.signal });
+      if (!res.ok) throw new Error(`事件流 ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+          if (!line || ws.closed) continue;
+          const ev = JSON.parse(line.slice(5));
+          handleEvent(ev);
+          if (ev.type === 'end') ended = true;
+        }
+      }
+    } catch (e) {
+      if (ctrl.signal.aborted || ws.closed) return;
+    }
+    if (ended || ws.closed || state.ws !== ws || ctrl.signal.aborted) return;
     // 连接断开：任务仍在服务端运行，稍后重新拉取状态并续上
     setTimeout(() => { if (!ws.closed && state.ws === ws) { ws.subscribedJob = null; reloadProject().catch(() => {}); } }, 2000);
-  };
+  })();
 }
 
 function handleEvent(ev) {
@@ -647,7 +665,6 @@ function handleEvent(ev) {
       break;
     case 'end':
       ws.jobId = null;
-      ws.es = null;
       ws.status = '';
       if (ev.status !== 'done') reloadProject().catch(() => {});
       else { renderChat(); renderComposer(); }
@@ -1001,11 +1018,22 @@ async function publish() {
       <h2>🎉 已发布 Version ${r.seq}</h2>
       <p>任何人打开链接都能直接使用这个应用，每位访客的数据各自独立保存。之后修改了项目，记得再点「更新发布」。</p>
       <div class="code-box">${esc(url)}</div>
-      <div class="row"><button class="btn" id="pub-copy">复制链接</button><a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">打开</a><button class="btn primary" id="pub-ok">完成</button></div>
+      <div class="row"><button class="btn danger" id="pub-off">取消发布</button><button class="btn" id="pub-copy">复制链接</button><a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">打开</a><button class="btn primary" id="pub-ok">完成</button></div>
     </div>`;
     document.body.appendChild(mask);
     mask.onclick = (e) => { if (e.target === mask) mask.remove(); };
     $('#pub-ok', mask).onclick = () => mask.remove();
+    $('#pub-off', mask).onclick = async () => {
+      if (!confirm('取消发布后链接立即失效，访客数据也会清除。确定吗？')) return;
+      try {
+        await api(`/api/projects/${ws.id}/publish`, { method: 'DELETE' });
+        ws.data.project.share_slug = null;
+        ws.data.project.published_version_id = null;
+        mask.remove();
+        toast('已取消发布，旧链接已失效');
+        renderWorkspace();
+      } catch (e) { toast(e.message, true); }
+    };
     $('#pub-copy', mask).onclick = () => navigator.clipboard.writeText(url).then(() => toast('链接已复制'), () => toast('复制失败，请手动复制', true));
     btn.textContent = '已发布';
   } catch (e) { toast(e.message, true); }
