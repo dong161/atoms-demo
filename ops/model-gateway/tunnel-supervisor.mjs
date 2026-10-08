@@ -13,18 +13,29 @@ async function ok(url, opts = {}, timeout = 20000) {
   try {
     const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeout) });
     return r.ok;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 async function register(base) {
   for (let i = 1; i <= 8; i++) {
     // 先确认隧道本身能通，再上报（线上服务可能在休眠，最多等几分钟）
     if (await ok(`${base}/v1/models`, { headers: { Authorization: `Bearer ${token}` } })) {
-      if (await ok(`${APP}/api/admin/llm-endpoint`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ baseUrl: `${base}/v1` }),
-      }, 90000)) { log('registered', base); return true; }
+      if (
+        await ok(
+          `${APP}/api/admin/llm-endpoint`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ baseUrl: `${base}/v1` }),
+          },
+          90000,
+        )
+      ) {
+        log('registered', base);
+        return true;
+      }
     }
     log(`register attempt ${i} failed, retrying`);
     await sleep(15000);
@@ -33,7 +44,9 @@ async function register(base) {
 }
 
 async function runOnce() {
-  const cf = spawn('cloudflared', ['tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', `http://127.0.0.1:${port}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const cf = spawn('cloudflared', ['tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', `http://127.0.0.1:${port}`], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   let base = null;
   let registered = false;
   let registering = false;

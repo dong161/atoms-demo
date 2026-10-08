@@ -42,6 +42,8 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   await db.run("UPDATE races SET status = 'failed' WHERE status = 'running'");
 
   const app = express();
+  // Render 前面有一层反向代理：信任一跳，req.ip 才是真实访客 IP（限流按访客区分）
+  if (process.env.RENDER) app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(express.json({ limit: '2mb' }));
 
@@ -226,8 +228,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     return list.slice(0, MAX_MODELS);
   }
 
-  function startJob(project, instruction, mode, models, hint = '') {
-    const job = hub.create(project.id);
+  function startJob(project, instruction, mode, models, hint = '', job = hub.create(project.id, project.user_id)) {
     runRace({ db, hub, cfg, job, project, instruction, hint, mode, models }).catch((e) => console.error('runRace', e));
     return job;
   }
@@ -315,7 +316,13 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     wrap(async (req, res) => {
       const p = await ownProject(req, res);
       if (!p) return;
-      hub.activeFor(p.id)?.ctrl.abort();
+      const active = hub.activeFor(p.id);
+      if (active) {
+        // 先让后台任务停下且不再写库，再删除，避免留下孤儿记录
+        active.deleted = true;
+        active.ctrl.abort();
+        for (let i = 0; i < 50 && active.status === 'running'; i++) await new Promise((r) => setTimeout(r, 100));
+      }
       await db.run('DELETE FROM race_entries WHERE race_id IN (SELECT id FROM races WHERE project_id = $1)', [p.id]);
       for (const t of ['races', 'versions', 'messages', 'app_kv']) await db.run(`DELETE FROM ${t} WHERE project_id = $1`, [p.id]);
       await db.run('DELETE FROM projects WHERE id = $1', [p.id]);
@@ -335,33 +342,41 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
       // 一键修复可以不写文字；点选元素后必须说明要怎么改
       const text = String(req.body?.text || '').trim() || (errors.length ? `修复预览中的 ${errors.length} 个运行错误` : '');
       if (!text) return res.status(400).json({ error: '请输入修改要求' });
-      if (hub.activeFor(p.id)) return res.status(409).json({ error: '上一个任务还在进行中，请稍候或先停止' });
       if (!p.current_version_id) return res.status(409).json({ error: '还没有可修改的版本，请先采用一个候选' });
-      if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
       if (text.length > 2000) return res.status(400).json({ error: '修改要求最多2000字符' });
       const options = generationOptions(req.body, p);
-      p.theme_id = options.themeId;
-      p.attachments = JSON.stringify(options.attachments);
-      await db.run('UPDATE projects SET updated_at=$1,theme_id=$2,attachments=$3 WHERE id=$4', [
-        Date.now(),
-        p.theme_id,
-        p.attachments,
-        p.id,
-      ]);
-      const meta =
-        target || errors.length
-          ? { target: target ? { tag: target.tag, text: target.text } : undefined, fixErrors: errors.length || undefined }
-          : undefined;
-      const message = await addMessage(db, p.id, 'user', 'text', text, meta);
-      const job = startJob(p, text, 'edit', pickModels(req.body?.models), editHint({ target, errors }));
-      res.json({ message, jobId: job.id });
+      // 检查和占用任务槽之间不能有 await，否则两个并发请求会同时通过检查
+      if (hub.activeFor(p.id)) return res.status(409).json({ error: '上一个任务还在进行中，请稍候或先停止' });
+      if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
+      const job = hub.create(p.id, req.user.id);
+      try {
+        p.theme_id = options.themeId;
+        p.attachments = JSON.stringify(options.attachments);
+        await db.run('UPDATE projects SET updated_at=$1,theme_id=$2,attachments=$3 WHERE id=$4', [
+          Date.now(),
+          p.theme_id,
+          p.attachments,
+          p.id,
+        ]);
+        const meta =
+          target || errors.length
+            ? { target: target ? { tag: target.tag, text: target.text } : undefined, fixErrors: errors.length || undefined }
+            : undefined;
+        const message = await addMessage(db, p.id, 'user', 'text', text, meta);
+        startJob(p, text, 'edit', pickModels(req.body?.models), editHint({ target, errors }), job);
+        res.json({ message, jobId: job.id });
+      } catch (e) {
+        hub.finish(job, 'failed');
+        throw e;
+      }
     }),
   );
 
   // ---------- 任务事件流（SSE），支持断线重连回放 ----------
   app.get('/api/jobs/:id/events', wrap(auth), (req, res) => {
     const job = hub.jobs.get(req.params.id);
-    if (!job) return res.status(404).json({ error: '任务不存在或已结束' });
+    // 只有任务所属用户可以订阅（任务 ID 泄露也看不到别人的进度和代码）
+    if (!job || job.ownerId !== req.user.id) return res.status(404).json({ error: '任务不存在或已结束' });
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -370,7 +385,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     });
     const send = (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
     const from = Number(req.query.from ?? 0);
-    for (const ev of job.events) if (ev.seq >= from || ev.type === 'progress') send(ev);
+    for (const ev of hub.replay(job, from)) send(ev);
     if (job.status !== 'running') return res.end();
     const sub = (ev) => {
       send(ev);
@@ -457,7 +472,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     wrap(async (req, res) => {
       const v = await ownedVersion(req, res);
       if (!v) return;
-      res.json({ html: v.html, title: v.title, seq: v.seq });
+      res.json({ html: v.html, title: v.title, seq: v.seq, projectId: v.project_id });
     }),
   );
 
@@ -571,12 +586,19 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   async function kvApply(projectId, scope, body) {
     const set = body?.set && typeof body.set === 'object' ? body.set : {};
     const del = Array.isArray(body?.del) ? body.del : [];
+    // 先整体校验再写入，避免部分键写进去、部分失败
+    for (const [k, v] of Object.entries(set)) {
+      if (k.length > 200 || String(v).length > KV_MAX_VALUE) throw Object.assign(new Error('单条数据过大'), { status: 413 });
+    }
+    const existing = body?.clear
+      ? new Set()
+      : new Set((await db.all('SELECT k FROM app_kv WHERE project_id = $1 AND scope = $2', [projectId, scope])).map((r) => r.k));
+    for (const k of Object.keys(set)) existing.add(k);
+    for (const k of del) if (!(String(k) in set)) existing.delete(String(k));
+    if (existing.size > KV_MAX_KEYS) throw Object.assign(new Error('存储的键太多了'), { status: 413 });
     if (body?.clear) await db.run('DELETE FROM app_kv WHERE project_id = $1 AND scope = $2', [projectId, scope]);
-    const count = await db.get('SELECT COUNT(*) AS c FROM app_kv WHERE project_id = $1 AND scope = $2', [projectId, scope]);
-    if (Number(count?.c ?? 0) + Object.keys(set).length > KV_MAX_KEYS) throw Object.assign(new Error('存储的键太多了'), { status: 413 });
     for (const [k, v] of Object.entries(set)) {
       const val = String(v);
-      if (k.length > 200 || val.length > KV_MAX_VALUE) throw Object.assign(new Error('单条数据过大'), { status: 413 });
       await db.run(
         `INSERT INTO app_kv (project_id, scope, k, v, updated_at) VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (project_id, scope, k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,

@@ -7,7 +7,10 @@ async function loadRuntime() {
   return runtimeSource;
 }
 
-const SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads';
+// 不给 allow-popups / allow-same-origin / allow-top-navigation：生成的应用不能开新窗口、不能读平台登录态、不能跳走父页面。
+// 外链由宿主确认后打开（见 open-link 消息）。
+const SANDBOX = 'allow-scripts allow-forms allow-modals allow-downloads';
+const CONSOLE_LEVELS = new Set(['log', 'info', 'warn', 'error']);
 
 function safeJson(obj) {
   return JSON.stringify(obj)
@@ -28,6 +31,53 @@ export async function buildSrcdoc(html, { data = {}, mode = 'live', channel }) {
 const newChannel = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 /**
+ * KV 同步队列：合并 iframe 发来的增量，串行写入云端，失败指数退避重试。
+ * 只有服务器确认成功后才移除对应变更，避免断网丢数据和并发请求乱序覆盖。
+ */
+export function createKvSync(save, { onError, delays = [1000, 3000, 8000, 20000] } = {}) {
+  let pending = new Map(); // key -> { v } | { del: true }
+  let running = false;
+  let failures = 0;
+  async function run() {
+    if (running || !pending.size) return;
+    running = true;
+    while (pending.size) {
+      const batch = pending;
+      pending = new Map();
+      const body = { set: {}, del: [] };
+      for (const [k, op] of batch) {
+        if (op.del) body.del.push(k);
+        else body.set[k] = op.v;
+      }
+      try {
+        await save(body);
+        failures = 0;
+      } catch (err) {
+        // 失败：把这一批合并回去（不覆盖期间产生的更新的变更），稍后重试
+        for (const [k, op] of batch) if (!pending.has(k)) pending.set(k, op);
+        const delay = delays[Math.min(failures, delays.length - 1)];
+        failures += 1;
+        onError?.(err, failures);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    running = false;
+  }
+  return {
+    push(set = {}, del = []) {
+      for (const [k, v] of Object.entries(set)) pending.set(String(k), { v: String(v) });
+      for (const k of del) pending.set(String(k), { del: true });
+      run();
+    },
+    get size() {
+      return pending.size;
+    },
+  };
+}
+
+const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+
+/**
  * 在 container 里挂一个可交互预览。
  * kv: { load(): Promise<object>, save({set, del}): Promise }，不传则数据只在内存里。
  */
@@ -42,25 +92,53 @@ export async function mountPreview(container, html, { kv, onConsole, onReady, on
       onConsole?.({ level: 'warn', text: `读取云端数据失败：${e.message}` });
     }
   }
+  const sync = kv
+    ? createKvSync(kv.save, {
+        onError: (err, n) =>
+          onConsole?.({ level: n >= 3 ? 'error' : 'warn', text: `数据同步失败（第 ${n} 次），稍后自动重试：${err.message}` }),
+      })
+    : null;
   const iframe = document.createElement('iframe');
   iframe.setAttribute('sandbox', SANDBOX);
   iframe.setAttribute('title', '应用预览');
   iframe.className = 'preview-frame';
+  const srcdoc = await buildSrcdoc(html, { data, mode: 'live', channel });
+  // 来自 iframe 的消息一律当作不可信输入：逐字段校验类型和长度
   const handler = (e) => {
     if (e.source !== iframe.contentWindow || !e.data || e.data.__atoms !== channel) return;
     const m = e.data;
-    if (m.type === 'kv' && kv) {
-      kv.save({ set: m.set, del: m.del }).catch((err) => onConsole?.({ level: 'error', text: `数据保存失败：${err.message}` }));
+    if (m.type === 'kv' && sync) {
+      const set = m.set && typeof m.set === 'object' ? m.set : {};
+      sync.push(set, Array.isArray(m.del) ? m.del : []);
     } else if (m.type === 'console') {
-      onConsole?.({ level: m.level, text: m.text });
+      onConsole?.({ level: CONSOLE_LEVELS.has(m.level) ? m.level : 'log', text: str(m.text, 2000) });
     } else if (m.type === 'ready') {
       onReady?.();
     } else if (m.type === 'picked' || m.type === 'pick-cancelled') {
-      onPicked?.(m.type === 'picked' ? m.target : null);
+      const t = m.target || {};
+      onPicked?.(
+        m.type === 'picked'
+          ? { selector: str(t.selector, 300), tag: str(t.tag, 20), text: str(t.text, 120), html: str(t.html, 801) }
+          : null,
+      );
+    } else if (m.type === 'open-link') {
+      const url = str(m.url, 2000);
+      if (/^https?:\/\//i.test(url) && confirm(`这个应用想打开外部链接：\n\n${url}\n\n确定打开吗？`))
+        window.open(url, '_blank', 'noopener,noreferrer');
     }
   };
   window.addEventListener('message', handler);
-  iframe.srcdoc = await buildSrcdoc(html, { data, mode: 'live', channel });
+  // 应用若尝试把自己导航到别处（第二次 load），立即恢复原内容
+  let loads = 0;
+  iframe.addEventListener('load', () => {
+    loads += 1;
+    if (loads > 1) {
+      onConsole?.({ level: 'warn', text: '应用尝试跳转到其它页面，已阻止并恢复预览' });
+      loads = 0;
+      iframe.srcdoc = srcdoc;
+    }
+  });
+  iframe.srcdoc = srcdoc;
   container.appendChild(iframe);
   return {
     iframe,

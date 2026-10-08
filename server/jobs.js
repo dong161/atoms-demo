@@ -14,12 +14,15 @@ export class JobHub {
     this.jobs = new Map();
   }
 
-  create(projectId) {
+  create(projectId, ownerId = null) {
     const job = {
       id: newId(),
       projectId,
+      ownerId,
       status: 'running',
       events: [],
+      progress: new Map(), // entryId -> 最新进度（只保留最新一条，单独存放，不占事件序号的位置）
+      nextSeq: 0,
       subscribers: new Set(),
       ctrl: new AbortController(),
       startedAt: now(),
@@ -29,16 +32,16 @@ export class JobHub {
   }
 
   emit(job, type, data = {}) {
-    const ev = { seq: job.events.length, type, ...data, at: now() };
-    // 进度事件只保留最新一条，避免回放时间过长
-    if (type === 'progress') {
-      const i = job.events.findIndex((e) => e.type === 'progress' && e.entryId === data.entryId);
-      if (i >= 0) job.events[i] = ev;
-      else job.events.push(ev);
-    } else {
-      job.events.push(ev);
-    }
+    // 序号单调递增；进度事件只保留每个候选的最新一条，避免回放过长
+    const ev = { seq: job.nextSeq++, type, ...data, at: now() };
+    if (type === 'progress') job.progress.set(data.entryId, ev);
+    else job.events.push(ev);
     for (const fn of job.subscribers) fn(ev);
+  }
+
+  /** 断线重连时的回放：from 之后的事件 + 各候选的最新进度 */
+  replay(job, from = 0) {
+    return [...job.events.filter((e) => e.seq >= from), ...job.progress.values()];
   }
 
   finish(job, status) {
@@ -67,7 +70,19 @@ export async function addMessage(db, projectId, role, kind, content, meta) {
   return { ...msg, meta: meta ?? null };
 }
 
-export async function createVersion(db, { projectId, html, model, source, score, scoreDetail, title }) {
+export async function createVersion(db, opts) {
+  // (project_id, seq) 有唯一索引：并发采用/回退时撞号就重新取号
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await insertVersion(db, opts);
+    } catch (e) {
+      const dup = e.code === '23505' || /UNIQUE constraint failed/.test(String(e.message));
+      if (!dup || attempt >= 4) throw e;
+    }
+  }
+}
+
+async function insertVersion(db, { projectId, html, model, source, score, scoreDetail, title }) {
   const row = await db.get('SELECT COALESCE(MAX(seq), 0) AS m FROM versions WHERE project_id = $1', [projectId]);
   const seq = Number(row?.m ?? 0) + 1;
   const v = {
@@ -95,7 +110,12 @@ export async function adoptEntry(db, entryId) {
   const entry = await db.get('SELECT * FROM race_entries WHERE id = $1', [entryId]);
   if (!entry || entry.status !== 'done') throw Object.assign(new Error('该候选还没有生成完成'), { status: 409 });
   const race = await db.get('SELECT * FROM races WHERE id = $1', [entry.race_id]);
-  if (race.adopted_entry_id === entryId) throw Object.assign(new Error('这个候选已经采用过了'), { status: 409 });
+  // 条件更新抢占：双击或并发请求只有一个能成功
+  const claim = await db.run(
+    "UPDATE races SET adopted_entry_id = $1, status = 'adopted' WHERE id = $2 AND (adopted_entry_id IS NULL OR adopted_entry_id <> $1)",
+    [entryId, race.id],
+  );
+  if (!claim.changes) throw Object.assign(new Error('这个候选已经采用过了'), { status: 409 });
   // 允许在同一轮里改选另一个候选：每次采用都生成一个新版本，历史可回退
   const version = await createVersion(db, {
     projectId: race.project_id,
@@ -105,7 +125,6 @@ export async function adoptEntry(db, entryId) {
     score: entry.score,
     scoreDetail: entry.score_detail ? JSON.parse(entry.score_detail) : null,
   });
-  await db.run('UPDATE races SET adopted_entry_id = $1, status = $2 WHERE id = $3', [entryId, 'adopted', race.id]);
   const msg = await addMessage(db, race.project_id, 'alex', 'version', `Version ${version.seq}: ${version.title}`, {
     versionId: version.id,
     seq: version.seq,
@@ -253,6 +272,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
     }
     hub.finish(job, 'done');
   } catch (e) {
+    if (job.deleted) return hub.finish(job, 'cancelled'); // 项目已删除：不再写任何记录
     const cancelled = signal.aborted;
     await say('system', 'error', cancelled ? '已停止生成，已完成的部分会保留。' : `出错了：${e.message}`).catch(() => {});
     await db.run("UPDATE races SET status = 'failed' WHERE project_id = $1 AND status = 'running'", [project.id]).catch(() => {});

@@ -33,6 +33,7 @@ export class LlmError extends Error {
  * signal 可用于外部取消。
  */
 export async function streamChat({ cfg, model, messages, maxTokens = 16000, temperature = 0.7, onDelta, signal }) {
+  if (signal?.aborted) throw new LlmError('已取消');
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort(signal?.reason);
   signal?.addEventListener('abort', onAbort, { once: true });
@@ -71,6 +72,25 @@ export async function streamChat({ cfg, model, messages, maxTokens = 16000, temp
     let full = '';
     let finished = false;
     try {
+      const handleLine = (raw) => {
+        const line = raw.trim();
+        if (!line.startsWith('data:')) return;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') return;
+        let json;
+        try {
+          json = JSON.parse(data);
+        } catch {
+          return;
+        }
+        if (json.error) throw new LlmError(`模型返回错误: ${JSON.stringify(json.error).slice(0, 200)}`, { retryable: true });
+        if (json.choices?.[0]?.finish_reason) finished = true;
+        const delta = json.choices?.[0]?.delta?.content ?? json.choices?.[0]?.message?.content ?? '';
+        if (delta) {
+          full += delta;
+          onDelta?.(delta);
+        }
+      };
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -78,26 +98,14 @@ export async function streamChat({ cfg, model, messages, maxTokens = 16000, temp
         buf += decoder.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, idx).trim();
+          const line = buf.slice(0, idx);
           buf = buf.slice(idx + 1);
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (data === '[DONE]') continue;
-          let json;
-          try {
-            json = JSON.parse(data);
-          } catch {
-            continue;
-          }
-          if (json.error) throw new LlmError(`模型返回错误: ${JSON.stringify(json.error).slice(0, 200)}`, { retryable: true });
-          if (json.choices?.[0]?.finish_reason) finished = true;
-          const delta = json.choices?.[0]?.delta?.content ?? json.choices?.[0]?.message?.content ?? '';
-          if (delta) {
-            full += delta;
-            onDelta?.(delta);
-          }
+          handleLine(line);
         }
       }
+      // 最后一行可能没有换行符：EOF 时把剩余缓冲区也处理掉
+      buf += decoder.decode();
+      if (buf.trim()) handleLine(buf);
     } catch (e) {
       throw asLlmError(e, ctrl);
     }
@@ -137,7 +145,19 @@ export async function streamChatWithRetry(opts, { retries = 1 } = {}) {
       attempt += 1;
       opts.onRetry?.(e, attempt);
       opts.onReset?.();
-      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      // 退避等待期间用户点了停止，就不再发起下一次请求
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(done, 1500 * attempt);
+        function done() {
+          opts.signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }
+        function onAbort() {
+          clearTimeout(t);
+          reject(new LlmError('已取消'));
+        }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+      });
     }
   }
 }

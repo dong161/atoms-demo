@@ -1159,7 +1159,7 @@ async function renderPreview(box) {
   ws.consoleLines = [];
   ws.picking = false;
   renderConsole();
-  ws.preview = await mountPreview($('#frame-wrap'), html, {
+  const preview = await mountPreview($('#frame-wrap'), html, {
     kv,
     onConsole: pushConsole,
     onPicked: (target) => {
@@ -1174,6 +1174,9 @@ async function renderPreview(box) {
       $('#chat-input')?.focus();
     },
   });
+  // 加载期间用户可能已切换版本/设备：过期的预览直接销毁，不能覆盖当前引用
+  if (ws.closed || ws.previewKey !== key) return preview.destroy();
+  ws.preview = preview;
 }
 
 function pushConsole(line) {
@@ -1223,7 +1226,7 @@ function renderConsole() {
   if (!el || el.classList.contains('hidden')) return;
   const lines = state.ws.consoleLines;
   el.innerHTML = lines.length
-    ? lines.map((l) => `<div class="line ${l.level}">[${l.level}] ${esc(l.text)}</div>`).join('')
+    ? lines.map((l) => `<div class="line ${esc(l.level)}">[${esc(l.level)}] ${esc(l.text)}</div>`).join('')
     : '<div class="line">暂无输出。应用里的 console 输出和报错会显示在这里。</div>';
   el.scrollTop = el.scrollHeight;
 }

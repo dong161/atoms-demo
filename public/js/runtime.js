@@ -126,14 +126,15 @@
     };
   });
 
-  // 拦截跳出预览的导航（外链在新窗口打开）
+  // 拦截跳出预览的导航（外链交给宿主确认）
   document.addEventListener('click', function (e) {
     var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!a) return;
     var href = a.getAttribute('href') || '';
     if (href.charAt(0) === '#' || href.indexOf('javascript:') === 0) return;
     e.preventDefault();
-    if (!probeMode) window.open(a.href, '_blank', 'noopener');
+    // 预览没有弹窗权限：外链交给宿主页确认后再打开
+    if (!probeMode) post({ type: 'open-link', url: a.href });
   });
   window.addEventListener('submit', function (e) {
     e.preventDefault();

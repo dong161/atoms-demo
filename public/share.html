@@ -72,7 +72,8 @@
           const d = await json(`/api/versions/${encodeURIComponent(q.get('version'))}/html`, { headers: auth });
           html = d.html;
           title = `${d.title} · Version ${d.seq}`;
-          const base = `/api/projects/${encodeURIComponent(q.get('project'))}/kv`;
+          // 数据归属以服务端返回的版本所属项目为准，忽略 URL 里的 project 参数，防止版本与数据错配
+          const base = `/api/projects/${encodeURIComponent(d.projectId)}/kv`;
           kv = {
             load: async () => (await json(base, { headers: auth })).data,
             save: (body) =>

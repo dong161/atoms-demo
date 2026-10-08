@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS versions (
   score_detail TEXT,
   created_at BIGINT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_versions_project ON versions(project_id, seq);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_project_seq ON versions(project_id, seq);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
