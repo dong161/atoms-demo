@@ -2412,3 +2412,22 @@ details.review li.miss {
   width: 100%;
   height: auto;
 }
+
+.showcase-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.showcase-row a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+.showcase-row a:hover {
+  text-decoration: underline;
+}

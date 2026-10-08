@@ -1,6 +1,6 @@
 import { mountPreview, probeApp } from './sandbox.js';
 import { readComposerOptions, saveComposerOptions, optionsMarkup, bindComposerOptions } from './composer-options.js';
-import { agentAvatars, landingSections, inspirationPrompts } from './landing.js';
+import { agentAvatars, landingSections, inspirationPrompts, showcases } from './landing.js';
 
 // ======================= 基础工具 =======================
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -416,6 +416,7 @@ async function renderHome() {
       </div>
     </form>
     <div class="examples">${EXAMPLES.map((e, i) => `<button class="example" data-ex="${i}">${e.label}</button>`).join('')}</div>
+    <div class="showcase-row">不想等生成？先用用成品：${showcases.map((c) => `<a href="${c.url}" target="_blank" rel="noopener">${esc(c.title)} ↗</a>`).join('')}</div>
     </div>
     ${state.config.mockOnly ? '<div class="notice">当前为<b>演示模式</b>（未配置模型 API Key）：完整流程可体验，生成结果来自内置示例。</div>' : ''}
     <div class="section-title"><h2>我的项目</h2><span id="proj-count"></span></div>
