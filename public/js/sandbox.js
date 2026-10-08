@@ -178,6 +178,20 @@ function waitFor(iframe, channel, type, timeout) {
  */
 const PROBE_MARK = 'QA探针记录';
 
+/** 两段页面文字按行比较的相似度（0~1），容忍时钟、倒计时等少量动态内容。 */
+export function similarText(a = '', b = '') {
+  const lines = (t) =>
+    t
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+  const A = lines(a);
+  const B = new Set(lines(b));
+  if (!A.length && !B.size) return 1;
+  const same = A.filter((l) => B.has(l)).length;
+  return same / Math.max(A.length, B.size);
+}
+
 /** 在离屏 iframe 里加载应用，返回 { iframe, channel, holder }。 */
 async function offscreen(html, data, width = 1024) {
   const channel = newChannel();
@@ -227,8 +241,11 @@ export async function probeApp(html, { staticScore = 10, review = null, timeoutM
         const checkP = waitFor(second.iframe, second.channel, 'text-check-result', 3000);
         second.iframe.contentWindow.postMessage({ __atoms: second.channel, type: 'text-check', needle: PROBE_MARK }, '*');
         const check = await checkP;
-        // 刷新后能看到刚才填写的内容，或页面状态与全新打开时不同（计数类应用不显示文字）
-        persisted = !!check && (check.found || check.text.trim() !== (report.initialText || '').trim());
+        // 判定“刷新后没恢复”：刷新后的页面和全新打开时一样，而交互结束时明明有变化。
+        // 否则视为已恢复——能看到刚填写的标记、页面与全新打开时不同、或与交互结束时一致（例如最后点了撤销）。
+        persisted =
+          !!check &&
+          (check.found || similarText(check.text, report.initialText) < 0.98 || similarText(check.text, report.finalText) >= 0.98);
       } finally {
         second.holder.remove();
       }

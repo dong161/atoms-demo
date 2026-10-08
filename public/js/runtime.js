@@ -197,7 +197,7 @@
     return ((el.innerText || el.value || el.getAttribute('aria-label') || el.title || '') + '').trim();
   }
   var ADD_RE = /添加|新增|新建|保存|记录|提交|创建|打卡|开始|计算|确定|add|save|create|submit|start|\+/i;
-  var DANGER_RE = /删除|清空|重置|移除|delete|clear|reset|remove|×|✕/i;
+  var DANGER_RE = /删除|清空|重置|移除|撤销|撤回|delete|clear|reset|remove|undo|×|✕/i;
 
   async function measureClick(el) {
     var changed = 0;
@@ -289,6 +289,8 @@
     report.forms = forms.length;
     report.storageWrites = stats.writes - writesBefore;
     report.storageReads = stats.reads;
+    // 交互结束时用户看到的页面：刷新后应该恢复成这个样子
+    report.finalText = ((document.body && document.body.innerText) || '').slice(0, 5000);
     // 交互后的数据快照：宿主用它模拟“刷新页面”，检查数据是否真的能恢复
     if (report.storageWrites > 0) {
       var snap = {};

@@ -213,3 +213,11 @@ test('缺失的静态资源返回 404，页面路由仍回落到首页', async (
     await t.close();
   }
 });
+
+test('similarText：按行比较页面文字，容忍少量动态内容', async () => {
+  const { similarText } = await import('../public/js/sandbox.js');
+  assert.equal(similarText('a\nb\nc', 'a\nb\nc'), 1);
+  assert.equal(similarText('', ''), 1);
+  assert.ok(similarText('标题\n已喝 0 ml\n按钮', '标题\n已喝 250 ml\n按钮') < 0.98);
+  assert.ok(similarText('a\nb\nc\nd', 'a\nb\nc\nd\n12:00:01') < 1);
+});
