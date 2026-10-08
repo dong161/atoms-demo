@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+  :root { --primary: #10b981; --text: #1f2937; --muted: #6b7280; --line: #e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f3f6f4; color: var(--text); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { margin: 0 0 4px; font-size: 24px; } .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+  .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 4px 18px rgba(0,0,0,.05); }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  input { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; background: #eef2f0; border-radius: 10px; padding: 4px; margin-top: 4px; }
+  .seg button { border: 0; background: transparent; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--muted); }
+  .seg button.on { background: #fff; color: var(--primary); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .go { width: 100%; margin-top: 18px; border: 0; border-radius: 10px; padding: 12px; background: var(--primary); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .kpi { background: color-mix(in srgb, var(--primary) 8%, #fff); border-radius: 12px; padding: 14px; }
+  .kpi .v { font-size: 22px; font-weight: 800; color: var(--primary); margin-top: 4px; word-break: break-all; }
+  .kpi .k { font-size: 12px; color: var(--muted); }
+  .save { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: #fff7ed; color: #9a3412; font-size: 14px; line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid var(--line); } th:first-child, td:first-child { text-align: left; }
+  .table-wrap { max-height: 260px; overflow: auto; }
+  .history { margin-top: 16px; } .history h3 { font-size: 15px; margin: 0 0 8px; }
+  .h-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 13px; cursor: pointer; }
+  .h-item:hover { color: var(--primary); }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{TITLE}}</h1>
+  <p class="sub">输入贷款信息，立即算出月供，并对比提前还款能省多少利息。</p>
+  <div class="grid">
+    <form class="card" id="form">
+      <label>贷款总额（万元）</label><input name="amount" type="number" min="1" step="0.1" value="200" required>
+      <label>贷款年限（年）</label><input name="years" type="number" min="1" max="30" value="30" required>
+      <label>年利率（%）</label><input name="rate" type="number" min="0" step="0.01" value="3.10" required>
+      <label>还款方式</label>
+      <div class="seg" id="seg"><button type="button" data-m="equal" class="on">等额本息</button><button type="button" data-m="principal">等额本金</button></div>
+      <label>第几年提前还款 / 还多少万</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input name="preYear" type="number" min="1" value="5"><input name="preAmount" type="number" min="0" step="1" value="50"></div>
+      <button class="go" type="submit">开始计算</button>
+    </form>
+    <div class="card">
+      <div class="kpis">
+        <div class="kpi"><div class="k">首月月供</div><div class="v" id="first">-</div></div>
+        <div class="kpi"><div class="k">总利息</div><div class="v" id="interest">-</div></div>
+        <div class="kpi"><div class="k">还款总额</div><div class="v" id="total">-</div></div>
+      </div>
+      <div class="save" id="save"></div>
+      <div class="table-wrap"><table><thead><tr><th>年份</th><th>本年还款</th><th>其中利息</th><th>剩余本金</th></tr></thead><tbody id="rows"></tbody></table></div>
+      <div class="history"><h3>最近计算</h3><div id="history"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+  const KEY = 'mortgage.history.v1';
+  let mode = 'equal';
+  let history = JSON.parse(localStorage.getItem(KEY) || '[]');
+  const fmt = (n) => (n >= 1e4 ? (n / 1e4).toFixed(2) + ' 万' : n.toFixed(0) + ' 元');
+
+  function schedule(P, years, rate, m, pre) {
+    const r = rate / 100 / 12, n = years * 12;
+    let bal = P, rows = [], totalInt = 0, totalPay = 0, first = 0, yearPay = 0, yearInt = 0;
+    let pay = m === 'equal' ? (r ? (P * r * (1 + r) ** n) / ((1 + r) ** n - 1) : P / n) : 0;
+    for (let i = 1; i <= n && bal > 0.01; i++) {
+      const it = bal * r;
+      let principal = m === 'equal' ? pay - it : P / n;
+      principal = Math.min(principal, bal);
+      const p = principal + it;
+      if (i === 1) first = p;
+      bal -= principal; totalInt += it; totalPay += p; yearPay += p; yearInt += it;
+      if (pre && i === pre.year * 12 && pre.amount > 0) {
+        const a = Math.min(pre.amount, bal); bal -= a; totalPay += a; yearPay += a;
+        if (m === 'equal' && bal > 0) { const left = n - i; pay = r ? (bal * r * (1 + r) ** left) / ((1 + r) ** left - 1) : bal / left; }
+      }
+      if (i % 12 === 0 || bal <= 0.01) { rows.push([Math.ceil(i / 12), yearPay, yearInt, Math.max(bal, 0)]); yearPay = yearInt = 0; }
+    }
+    return { first, totalInt, totalPay, rows };
+  }
+
+  function calc(p, record = true) {
+    const P = p.amount * 1e4;
+    const base = schedule(P, p.years, p.rate, p.mode, null);
+    const withPre = schedule(P, p.years, p.rate, p.mode, { year: p.preYear, amount: p.preAmount * 1e4 });
+    document.getElementById('first').textContent = fmt(base.first);
+    document.getElementById('interest').textContent = fmt(base.totalInt);
+    document.getElementById('total').textContent = fmt(base.totalPay);
+    document.getElementById('save').innerHTML = p.preAmount > 0
+      ? `第 ${p.preYear} 年提前还款 <b>${p.preAmount} 万</b>，可节省利息 <b>${fmt(base.totalInt - withPre.totalInt)}</b>（还款后利息合计 ${fmt(withPre.totalInt)}）。`
+      : '未设置提前还款。';
+    document.getElementById('rows').innerHTML = base.rows.map((r) => `<tr><td>第 ${r[0]} 年</td><td>${fmt(r[1])}</td><td>${fmt(r[2])}</td><td>${fmt(r[3])}</td></tr>`).join('');
+    if (record) {
+      history = [{ ...p, first: base.first, at: new Date().toLocaleString('zh-CN') }, ...history].slice(0, 10);
+      localStorage.setItem(KEY, JSON.stringify(history));
+    }
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const box = document.getElementById('history');
+    box.innerHTML = history.length ? '' : '<div style="color:#9ca3af;font-size:13px">还没有记录</div>';
+    history.forEach((h) => {
+      const el = document.createElement('div');
+      el.className = 'h-item';
+      el.innerHTML = `<span>${h.amount} 万 · ${h.years} 年 · ${h.rate}% · ${h.mode === 'equal' ? '等额本息' : '等额本金'}</span><span>${fmt(h.first)}/月</span>`;
+      el.onclick = () => { fill(h); calc(h, false); };
+      box.appendChild(el);
+    });
+  }
+
+  function read() {
+    const f = new FormData(document.getElementById('form'));
+    return { amount: +f.get('amount'), years: +f.get('years'), rate: +f.get('rate'), preYear: +f.get('preYear'), preAmount: +f.get('preAmount'), mode };
+  }
+  function fill(h) {
+    const form = document.getElementById('form');
+    ['amount', 'years', 'rate', 'preYear', 'preAmount'].forEach((k) => (form[k].value = h[k]));
+    setMode(h.mode);
+  }
+  function setMode(m) { mode = m; document.querySelectorAll('#seg button').forEach((b) => b.classList.toggle('on', b.dataset.m === m)); }
+  document.querySelectorAll('#seg button').forEach((b) => (b.onclick = () => { setMode(b.dataset.m); calc(read(), false); }));
+  document.getElementById('form').addEventListener('submit', (e) => { e.preventDefault(); calc(read()); });
+  calc(read(), false);
+</script>
+</body>
+</html>

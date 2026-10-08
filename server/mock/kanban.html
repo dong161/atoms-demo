@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+  :root { --primary: #6d5efc; --bg: #f5f6fb; --card: #fff; --text: #1f2333; --muted: #7a8099; --line: #e6e8f0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 20px 24px 8px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { margin: 0; font-size: 22px; }
+  .stats { color: var(--muted); font-size: 13px; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 24px 16px; }
+  input, select { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; background: #fff; min-width: 0; }
+  input[name=title] { flex: 1 1 220px; }
+  button { border: 0; border-radius: 10px; padding: 10px 16px; font-size: 14px; cursor: pointer; background: var(--primary); color: #fff; font-weight: 600; }
+  .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 0 24px 32px; }
+  .col { background: #eceef7; border-radius: 14px; padding: 12px; min-height: 240px; transition: background .15s; }
+  .col.over { background: color-mix(in srgb, var(--primary) 14%, #eceef7); }
+  .col h2 { margin: 4px 4px 12px; font-size: 15px; display: flex; justify-content: space-between; }
+  .count { background: #fff; border-radius: 999px; padding: 0 8px; font-size: 12px; color: var(--muted); }
+  .task { background: var(--card); border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(20,20,60,.06); cursor: grab; border-left: 4px solid var(--line); }
+  .task.high { border-left-color: #ef4444; } .task.mid { border-left-color: #f59e0b; } .task.low { border-left-color: #10b981; }
+  .task .t { font-weight: 600; font-size: 14px; word-break: break-word; }
+  .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .overdue { color: #ef4444; font-weight: 600; }
+  .del { background: transparent; color: var(--muted); padding: 2px 6px; font-weight: 400; }
+  .del:hover { color: #ef4444; }
+  .move { display: none; gap: 4px; }
+  .move button { padding: 4px 8px; font-size: 12px; background: #eef0fb; color: var(--primary); }
+  @media (max-width: 720px) {
+    .board { grid-template-columns: 1fr; padding: 0 16px 24px; }
+    header, form { padding-left: 16px; padding-right: 16px; }
+    .move { display: flex; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{TITLE}}</h1>
+  <div class="stats" id="stats"></div>
+</header>
+<form id="form">
+  <input name="title" placeholder="新任务，例如：完成需求评审" required maxlength="80">
+  <select name="priority"><option value="high">高优先级</option><option value="mid" selected>中优先级</option><option value="low">低优先级</option></select>
+  <input name="due" type="date">
+  <button type="submit">添加任务</button>
+</form>
+<main class="board" id="board"></main>
+<script>
+  const KEY = 'kanban.tasks.v1';
+  const COLS = [['todo', '待办'], ['doing', '进行中'], ['done', '已完成']];
+  const today = new Date().toISOString().slice(0, 10);
+  const addDays = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  let tasks = JSON.parse(localStorage.getItem(KEY) || 'null') || [
+    { id: 1, title: '整理需求文档', priority: 'high', due: addDays(1), col: 'todo' },
+    { id: 2, title: '设计首页原型', priority: 'mid', due: addDays(3), col: 'doing' },
+    { id: 3, title: '搭建项目仓库', priority: 'low', due: addDays(-1), col: 'done' },
+  ];
+  const save = () => localStorage.setItem(KEY, JSON.stringify(tasks));
+  const order = { high: 0, mid: 1, low: 2 };
+
+  function render() {
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    for (const [key, name] of COLS) {
+      const list = tasks.filter((t) => t.col === key).sort((a, b) => order[a.priority] - order[b.priority]);
+      const col = document.createElement('section');
+      col.className = 'col';
+      col.dataset.col = key;
+      col.innerHTML = `<h2>${name}<span class="count">${list.length}</span></h2>`;
+      for (const t of list) {
+        const el = document.createElement('div');
+        el.className = `task ${t.priority}`;
+        el.draggable = true;
+        el.dataset.id = t.id;
+        const late = t.due && t.due < today && t.col !== 'done';
+        el.innerHTML = `<div class="t"></div>
+          <div class="meta"><span class="${late ? 'overdue' : ''}">${t.due ? (late ? '已逾期 ' : '截止 ') + t.due : '无截止日'}</span>
+          <span class="move">${COLS.filter(([k]) => k !== key).map(([k, n]) => `<button data-to="${k}">→${n}</button>`).join('')}</span>
+          <button class="del" title="删除">✕</button></div>`;
+        el.querySelector('.t').textContent = t.title;
+        el.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', t.id));
+        el.querySelector('.del').onclick = () => { tasks = tasks.filter((x) => x.id !== t.id); save(); render(); };
+        el.querySelectorAll('[data-to]').forEach((b) => (b.onclick = () => { t.col = b.dataset.to; save(); render(); }));
+        col.appendChild(el);
+      }
+      col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('over'); });
+      col.addEventListener('dragleave', () => col.classList.remove('over'));
+      col.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const t = tasks.find((x) => String(x.id) === e.dataTransfer.getData('text/plain'));
+        if (t) { t.col = key; save(); render(); }
+      });
+      board.appendChild(col);
+    }
+    const done = tasks.filter((t) => t.col === 'done').length;
+    document.getElementById('stats').textContent = `共 ${tasks.length} 个任务 · 已完成 ${done} · 完成率 ${tasks.length ? Math.round((done / tasks.length) * 100) : 0}%`;
+  }
+
+  document.getElementById('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    tasks.push({ id: Date.now(), title: f.get('title').trim(), priority: f.get('priority'), due: f.get('due'), col: 'todo' });
+    save(); render(); e.target.reset();
+  });
+  render();
+</script>
+</body>
+</html>

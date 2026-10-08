@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+  :root { --primary: #2563eb; --text: #1e2433; --muted: #6b7280; --line: #e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: #f8fafc; }
+  .hero { background: linear-gradient(135deg, #0f172a, color-mix(in srgb, var(--primary) 60%, #0f172a)); color: #fff; padding: 56px 24px 72px; text-align: center; }
+  .avatar { width: 92px; height: 92px; border-radius: 50%; margin: 0 auto 16px; display: grid; place-items: center; font-size: 40px; background: rgba(255,255,255,.15); border: 3px solid rgba(255,255,255,.4); }
+  .hero h1 { margin: 0 0 6px; font-size: 30px; }
+  .hero p { margin: 0 auto; max-width: 560px; opacity: .85; line-height: 1.7; }
+  .toolbar { position: fixed; right: 16px; top: 16px; display: flex; gap: 8px; z-index: 5; }
+  button { border: 0; border-radius: 999px; padding: 8px 16px; font-size: 14px; cursor: pointer; font-weight: 600; background: #fff; color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  button.primary { background: var(--primary); color: #fff; }
+  main { max-width: 860px; margin: -40px auto 40px; padding: 0 16px; display: grid; gap: 16px; }
+  .card { background: #fff; border-radius: 16px; padding: 22px; box-shadow: 0 4px 20px rgba(15,23,42,.06); }
+  .card h2 { margin: 0 0 14px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { background: color-mix(in srgb, var(--primary) 10%, #fff); color: var(--primary); padding: 6px 12px; border-radius: 999px; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+  .tag b { cursor: pointer; display: none; } .editing .tag b { display: inline; }
+  .projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .proj { border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .proj h3 { margin: 0 0 6px; font-size: 15px; } .proj p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .contact { display: grid; gap: 8px; color: var(--muted); }
+  [data-edit] { outline: none; border-radius: 6px; }
+  .editing [data-edit] { background: rgba(255,230,120,.25); box-shadow: 0 0 0 1px rgba(234,179,8,.6); }
+  .add { display: none; font-size: 13px; padding: 4px 10px; }
+  .editing .add { display: inline-block; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="toolbar"><button id="editBtn">编辑主页</button></div>
+<section class="hero">
+  <div class="avatar">🧑‍💻</div>
+  <h1 data-edit="name">李同学</h1>
+  <p data-edit="bio">全栈工程师，喜欢用 AI 工具把想法快速变成可用的产品。关注开发效率、用户体验和工程质量。</p>
+</section>
+<main>
+  <div class="card"><h2>技能 <button class="add primary" id="addSkill">+ 添加</button></h2><div class="tags" id="skills"></div></div>
+  <div class="card"><h2>项目经历 <button class="add primary" id="addProj">+ 添加</button></h2><div class="projects" id="projects"></div></div>
+  <div class="card"><h2>联系方式</h2>
+    <div class="contact">
+      <div>📧 <span data-edit="email">hello@example.com</span></div>
+      <div>📍 <span data-edit="city">上海</span></div>
+      <div>💬 <span data-edit="wechat">微信：example_dev</span></div>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+  const KEY = 'homepage.profile.v1';
+  const defaults = {
+    fields: {},
+    skills: ['JavaScript', 'Node.js', 'React', 'PostgreSQL', 'Prompt Engineering'],
+    projects: [
+      { name: 'AI 应用生成器', desc: '一句话生成可运行的网页应用，支持多模型赛马。' },
+      { name: '数据看板', desc: '为运营团队搭建的实时指标看板，日活 2000+。' },
+    ],
+  };
+  let data = Object.assign(structuredClone(defaults), JSON.parse(localStorage.getItem(KEY) || '{}'));
+  let editing = false;
+  const save = () => { localStorage.setItem(KEY, JSON.stringify(data)); toast('已保存'); };
+  function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1200); }
+
+  function render() {
+    document.querySelectorAll('[data-edit]').forEach((el) => {
+      if (data.fields[el.dataset.edit] != null) el.textContent = data.fields[el.dataset.edit];
+      el.contentEditable = editing;
+    });
+    const skills = document.getElementById('skills');
+    skills.innerHTML = '';
+    data.skills.forEach((s, i) => {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = s;
+      const x = document.createElement('b'); x.textContent = '×';
+      x.onclick = () => { data.skills.splice(i, 1); save(); render(); };
+      tag.appendChild(x); skills.appendChild(tag);
+    });
+    const projects = document.getElementById('projects');
+    projects.innerHTML = '';
+    data.projects.forEach((p, i) => {
+      const el = document.createElement('div');
+      el.className = 'proj';
+      el.innerHTML = '<h3></h3><p></p>';
+      el.querySelector('h3').textContent = p.name;
+      el.querySelector('p').textContent = p.desc;
+      if (editing) {
+        const del = document.createElement('button'); del.textContent = '删除'; del.className = 'add primary';
+        del.style.marginTop = '10px';
+        del.onclick = () => { data.projects.splice(i, 1); save(); render(); };
+        el.appendChild(del);
+      }
+      projects.appendChild(el);
+    });
+    document.body.classList.toggle('editing', editing);
+    document.getElementById('editBtn').textContent = editing ? '完成编辑' : '编辑主页';
+    document.getElementById('editBtn').classList.toggle('primary', editing);
+  }
+
+  document.getElementById('editBtn').onclick = () => {
+    if (editing) {
+      document.querySelectorAll('[data-edit]').forEach((el) => (data.fields[el.dataset.edit] = el.textContent.trim()));
+      save();
+    }
+    editing = !editing; render();
+  };
+  document.getElementById('addSkill').onclick = () => { const s = prompt('新技能'); if (s) { data.skills.push(s.trim()); save(); render(); } };
+  document.getElementById('addProj').onclick = () => {
+    const name = prompt('项目名称'); if (!name) return;
+    data.projects.push({ name: name.trim(), desc: prompt('一句话介绍') || '' }); save(); render();
+  };
+  render();
+</script>
+</body>
+</html>
