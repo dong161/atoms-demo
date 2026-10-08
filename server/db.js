@@ -99,6 +99,8 @@ async function openPg(url) {
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+  await pool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS theme_id TEXT');
+  await pool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS attachments TEXT');
   return {
     kind: 'postgres',
     async all(sql, params = []) { return (await pool.query(sql, params)).rows; },
@@ -118,6 +120,9 @@ async function openSqlite(file) {
   if (!columns.includes('email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   if (!columns.includes('password_hash')) db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+  const projectColumns=db.prepare('PRAGMA table_info(projects)').all().map(c=>c.name);
+  if(!projectColumns.includes('theme_id'))db.exec('ALTER TABLE projects ADD COLUMN theme_id TEXT');
+  if(!projectColumns.includes('attachments'))db.exec('ALTER TABLE projects ADD COLUMN attachments TEXT');
   const conv = (sql) => sql.replace(/\$\d+/g, '?');
   const norm = (row) => (row ? { ...row } : row);
   return {

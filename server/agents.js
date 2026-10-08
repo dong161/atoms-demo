@@ -1,3 +1,4 @@
+import { applyTheme, themeInstruction } from './generation-options.js';
 // 智能体：Mike（组长，拆需求出方案）、Alex（工程师，写/改代码）。
 // 每个智能体都有 mock 实现：没配模型或模型失败时自动兜底，保证流程能走完。
 import fs from 'node:fs';
@@ -85,13 +86,14 @@ function editMessages(baseHtml, instruction) {
  * 生成一个候选结果。mode=create 用 plan 从零写；mode=edit 在 baseHtml 上改。
  * 返回 { html, source }，source 为实际使用的模型名或 'mock'。
  */
-export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, instruction, variant = 0, signal, onDelta, onRetry, onReset }) {
+export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, instruction, variant = 0, signal, onDelta, onRetry, onReset, themeId = 'default' }) {
   if (cfg.mockOnly || model === 'mock') {
     const html = mode === 'edit' ? mockEdit(baseHtml, instruction) : mockCreate(prompt, plan, variant);
     await fakeStream(html, onDelta, signal);
-    return { html, source: 'mock' };
+    return { html:applyTheme(html,themeId), source: 'mock' };
   }
   const messages = mode === 'edit' ? editMessages(baseHtml, instruction) : createMessages(plan, prompt);
+  messages[0].content += themeInstruction(themeId);
   const needScript = mode !== 'edit' || /<script[\s>]/i.test(baseHtml || '');
   let lastProblem = '';
   // 输出被截断/不完整时整段重来一次（最多 2 次尝试）
@@ -104,7 +106,7 @@ export async function engineerBuild({ cfg, model, mode, plan, prompt, baseHtml, 
     });
     const html = extractHtml(raw);
     lastProblem = htmlProblem(html, needScript);
-    if (!lastProblem) return { html, source: model };
+    if (!lastProblem) return { html:applyTheme(html,themeId), source: model };
     if (signal?.aborted) break;
   }
   throw new Error(`生成结果不完整：${lastProblem}`);

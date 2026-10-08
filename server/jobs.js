@@ -2,6 +2,7 @@
 // 任务在服务端跑，事件既推给在线的浏览器（SSE），关键结果也写进数据库；
 // 浏览器刷新或断开不会中断任务，重新打开项目会自动续上进度。
 import crypto from 'node:crypto';
+import { referencePrompt } from './generation-options.js';
 import { planProject, engineerBuild, reviewBuild, reviewChecklist } from './agents.js';
 import { staticCheck, titleFromHtml } from './html.js';
 
@@ -87,6 +88,10 @@ export async function adoptEntry(db, entryId) {
  * 跑一场赛马。mode = 'create'（首轮，先由 Mike 出方案）| 'edit'（在当前版本上修改）。
  */
 export async function runRace({ db, hub, cfg, job, project, instruction, mode, models }) {
+  const files=JSON.parse(project.attachments||'[]');
+  const themeId=project.theme_id||'default';
+  const prompt=referencePrompt(project.prompt,files);
+  instruction=referencePrompt(instruction,files);
   const signal = job.ctrl.signal;
   const emit = (type, data) => hub.emit(job, type, data);
   const say = async (role, kind, content, meta) => {
@@ -126,7 +131,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
       : `@Alex ${mode === 'create' ? '按方案开发' : `修改：${instruction}`}`;
     await say('mike', 'race', handoff, { raceId, mode, entries: entries.map((e) => ({ id: e.id, model: e.model })) });
 
-    const results = await Promise.all(entries.map((e, i) => buildEntry({ db, cfg, emit, signal, entry: e, variant: i, mode, plan, prompt: project.prompt, baseHtml, instruction })));
+    const results = await Promise.all(entries.map((e, i) => buildEntry({ db, cfg, emit, signal, entry: e, variant: i, mode, plan, prompt, baseHtml, instruction, themeId })));
 
     if (signal.aborted) throw new Error('已取消');
     let ok = results.filter((r) => r.ok);
@@ -141,7 +146,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
       const fb = { id: newId(), model: 'mock' };
       await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [fb.id, raceId, fb.model, 'running', now()]);
       emit('entry', { raceId, entry: { id: fb.id, model: 'mock', status: 'running' } });
-      const r = await buildEntry({ db, cfg: { ...cfg, mockOnly: true }, emit, signal, entry: fb, variant: 0, mode, plan, prompt: project.prompt, baseHtml, instruction });
+      const r = await buildEntry({ db, cfg: { ...cfg, mockOnly: true }, emit, signal, entry: fb, variant: 0, mode, plan, prompt, baseHtml, instruction, themeId });
       ok = r.ok ? [r] : [];
     }
     if (ok.length === 0) throw new Error('生成失败，请稍后重试');
@@ -164,7 +169,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
   }
 }
 
-async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, prompt, baseHtml, instruction }) {
+async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, prompt, baseHtml, instruction, themeId }) {
   const started = now();
   let chars = 0;
   let tail = '';
@@ -172,7 +177,7 @@ async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, p
   emit('progress', { entryId: entry.id, chars: 0, tail: '', status: 'running' });
   try {
     const { html, source } = await engineerBuild({
-      cfg, model: entry.model, mode, plan, prompt, baseHtml, instruction, variant, signal,
+      cfg, model: entry.model, mode, plan, prompt, baseHtml, instruction, themeId, variant, signal,
       onDelta: (d) => {
         chars += d.length;
         tail = (tail + d).slice(-400);

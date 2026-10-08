@@ -1,4 +1,5 @@
 import { mountPreview, probeApp } from './sandbox.js';
+import { readComposerOptions, saveComposerOptions, optionsMarkup, bindComposerOptions } from './composer-options.js';
 import { officialAssets, landingSections, inspirationPrompts } from './landing.js';
 
 // ======================= 基础工具 =======================
@@ -245,6 +246,7 @@ async function renderHome() {
   closeWorkspace();
   document.title = 'Atoms Demo · 一句话生成可用的应用';
   const app = $('#app');
+  const options=readComposerOptions();
   app.innerHTML = `${topbar()}
   <main class="home landing-home">
     <section class="hero landing-hero"><div class="hero-glow" aria-hidden="true"></div><div class="hero-eyebrow"><span></span> YOUR IDEA. YOUR AI TEAM.</div><div class="agents-row hero-agents">${['mike','emma','bob','alex','david'].map(k=>`<span class="hero-agent"><img src="${officialAssets[k]}" alt="${AGENTS[k].name}" referrerpolicy="no-referrer"></span>`).join('')}<span class="team-ready">AI 团队，已就位</span></div><h1>让你的灵感，<br>成为<em>真正能用的产品。</em></h1><p>一句话描述想法，AI 团队帮你拆解、开发与校验。<br>比较多个答案，亲手试用，再把作品分享出去。</p></section>
@@ -252,7 +254,7 @@ async function renderHome() {
     <form class="composer" id="composer">
       <textarea id="prompt" aria-label="描述你想做的应用" rows="3" maxlength="2000" placeholder="告诉 Atoms 团队你想做什么，例如：做一个带优先级和截止日的项目看板，支持拖拽"></textarea>
       <div class="composer-bar">
-        <div class="composer-left" id="race-slot">${raceControls()}</div>
+        <div class="composer-left" id="race-slot"></div>
         <div style="display:flex;align-items:center;gap:10px">
           <span class="hint">Enter 发送 · Shift+Enter 换行</span>
           <button class="send-btn" type="submit" id="send" title="开始生成" aria-label="开始生成">${ICONS.send}</button>
@@ -273,8 +275,11 @@ async function renderHome() {
   ta.oninput = () => { try { sessionStorage.setItem('atoms.draft', ta.value); } catch { /* ignore */ } };
   ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); } };
   app.querySelectorAll('[data-ex]').forEach((b) => (b.onclick = () => { ta.value = EXAMPLES[b.dataset.ex].text; ta.oninput(); ta.focus(); }));
-  const rerenderRace = () => { $('#race-slot').innerHTML = raceControls(); bindRaceControls($('#race-slot'), rerenderRace); };
-  bindRaceControls(app, rerenderRace);
+  const drawOptions=(raceOpen=false)=>{
+    const slot=$('#race-slot');slot.innerHTML=optionsMarkup(options)+`<div class="race-settings ${raceOpen?'':'hidden'}" data-advanced-race>${raceControls()}</div>`;
+    bindComposerOptions(slot,options,{onChange:()=>{saveComposerOptions(options);drawOptions();},onRace:()=>slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),notify:toast});
+    bindRaceControls(slot,()=>drawOptions(true));
+  };drawOptions();
   $('#account-btn') && ($('#account-btn').onclick = showAccount);
   $('#login-btn') && ($('#login-btn').onclick = () => showOnboarding({mode:'login'}));
   $('#signup-btn') && ($('#signup-btn').onclick = () => showOnboarding({mode:'register'}));
@@ -291,7 +296,8 @@ async function renderHome() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>';
     try {
-      const r = await api('/api/projects', { method: 'POST', body: { prompt, models: raceModels() } });
+      const r = await api('/api/projects', { method: 'POST', body: { prompt, models: raceModels(), ...options } });
+      saveComposerOptions({themeId:options.themeId,attachments:[]});
       try { sessionStorage.removeItem('atoms.draft'); } catch { /* ignore */ }
       location.hash = `#/p/${r.project.id}`;
     } catch (err) {
@@ -522,11 +528,13 @@ function renderComposer() {
   if (!form) return;
   const canEdit = !!ws.data.project.current_version_id;
   const running = !!ws.jobId;
+  ws.generation ??= readComposerOptions(ws.data.project);
+  const options=ws.generation;
   const old = $('#chat-input')?.value ?? ws.draft ?? '';
   form.innerHTML = `
     <textarea id="chat-input" rows="2" maxlength="2000" placeholder="${canEdit ? '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮' : '等第一个版本生成后，就可以在这里继续修改'}" ${canEdit ? '' : 'disabled'}></textarea>
     <div class="bar">
-      <div class="composer-left" id="chat-race">${raceControls(true)}</div>
+      <div class="composer-left" id="chat-race"></div>
       ${running
         ? `<button type="button" class="btn sm danger" id="stop-btn">${ICONS.stop} 停止</button>`
         : `<button type="submit" class="btn sm primary" ${canEdit ? '' : 'disabled'}>发送修改</button>`}
@@ -535,7 +543,9 @@ function renderComposer() {
   ta.value = old;
   ta.oninput = () => (ws.draft = ta.value);
   ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
-  bindRaceControls(form, renderComposer);
+  const slot=$('#chat-race');slot.innerHTML=optionsMarkup(options)+`<div class="race-settings hidden" data-advanced-race>${raceControls()}</div>`;
+  bindComposerOptions(slot,options,{onChange:()=>renderComposer(),onRace:()=>slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),notify:toast});
+  bindRaceControls(slot,renderComposer);
   $('#stop-btn') && ($('#stop-btn').onclick = async () => {
     try { await api(`/api/jobs/${ws.jobId}/cancel`, { method: 'POST' }); toast('正在停止…'); } catch (e) { toast(e.message, true); }
   });
@@ -544,7 +554,7 @@ function renderComposer() {
     const text = ta.value.trim();
     if (!text || running) return;
     try {
-      const r = await api(`/api/projects/${ws.id}/messages`, { method: 'POST', body: { text, models: raceModels() } });
+      const r = await api(`/api/projects/${ws.id}/messages`, { method: 'POST', body: { text, models: raceModels(), ...options } });
       ws.draft = '';
       ta.value = '';
       ws.data.messages.push(r.message);

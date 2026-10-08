@@ -5,6 +5,7 @@ const scryptAsync = promisify(crypto.scrypt);
 const dummySalt = crypto.randomBytes(16).toString('hex');
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import { generationOptions } from './generation-options.js';
 import { openDb } from './db.js';
 import { llmConfig } from './llm.js';
 import { JobHub, runRace, adoptEntry, createVersion, addMessage, newId } from './jobs.js';
@@ -159,11 +160,12 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     if (prompt.length < 2) return res.status(400).json({ error: '请描述你想做的应用' });
     if (prompt.length > 2000) return res.status(400).json({ error: '描述太长了，请控制在 2000 字以内' });
     if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
+    const options = generationOptions(req.body);
     const t = Date.now();
-    const project = { id: newId(), user_id: req.user.id, title: prompt.slice(0, 20), prompt, created_at: t, updated_at: t };
+    const project = { id: newId(), user_id: req.user.id, title: prompt.slice(0, 20), prompt, theme_id:options.themeId, attachments:JSON.stringify(options.attachments), created_at: t, updated_at: t };
     await db.run(
-      'INSERT INTO projects (id, user_id, title, prompt, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [project.id, project.user_id, project.title, project.prompt, t, t],
+      'INSERT INTO projects (id, user_id, title, prompt, created_at, updated_at,theme_id,attachments) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [project.id, project.user_id, project.title, project.prompt, t, t,project.theme_id,project.attachments],
     );
     await addMessage(db, project.id, 'user', 'text', prompt);
     const job = startJob(project, prompt, 'create', pickModels(req.body?.models));
@@ -221,7 +223,10 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     if (hub.activeFor(p.id)) return res.status(409).json({ error: '上一个任务还在进行中，请稍候或先停止' });
     if (!p.current_version_id) return res.status(409).json({ error: '还没有可修改的版本，请先采用一个候选' });
     if (!jobLimit(req.user.id)) return tooMany(res, `每小时最多生成 ${JOBS_PER_HOUR} 次，请稍后再试`);
-    await db.run('UPDATE projects SET updated_at = $1 WHERE id = $2', [Date.now(), p.id]);
+    if(text.length>2000)return res.status(400).json({error:'修改要求最多2000字符'});
+    const options=generationOptions(req.body,p);
+    p.theme_id=options.themeId;p.attachments=JSON.stringify(options.attachments);
+    await db.run('UPDATE projects SET updated_at=$1,theme_id=$2,attachments=$3 WHERE id=$4',[Date.now(),p.theme_id,p.attachments,p.id]);
     const message = await addMessage(db, p.id, 'user', 'text', text);
     const job = startJob(p, text, 'edit', pickModels(req.body?.models));
     res.json({ message, jobId: job.id });

@@ -68,7 +68,7 @@ flowchart LR
 - 前端：原生 ES Modules，无构建步骤、无框架
 - 实时通信：Server-Sent Events（SSE），支持断线后回放
 - 模型接入：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 测试：`node --test`（55 个用例）；CI 为 GitHub Actions
+- 测试：`node --test`（61 个用例）；CI 为 GitHub Actions
 - 部署：Render（Free）+ Neon
 
 ## 本地运行
@@ -79,7 +79,7 @@ flowchart LR
 npm install
 cp .env.example .env   # 不填任何模型配置也能运行，自动进入演示模式
 npm start              # http://localhost:3100
-npm test               # 55 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
+npm test               # 61 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
 ```
 
 不配置 `LLM_*` 时为演示模式：流程完整可用（拆解、赛马、校验、采用、迭代、回退、发布），但生成结果来自 `server/mock/` 下的三个内置模板，修改也只支持换主色和深色模式。配置 `LLM_BASE_URL`、`LLM_MODELS` 后即使用真实模型。本地未设置 `DATABASE_URL` 时数据保存在 `data/atoms-demo.db`。
@@ -151,3 +151,10 @@ npm test               # 55 个测试，使用内存 SQLite 与 mock 模型，�
 `.github/workflows/keepalive.yml` 每5分钟尽力访问 Render 的 `/api/health`，错开整点，保留手动触发并在保活配置变化时立即执行。脚本不仅检查HTTP成功，还要求JSON `ok=true`、数据库postgres；避免把Render返回HTTP200的唤醒页面误报健康。失败最多重试3次，单请求60秒、间隔10秒；任务5分钟超时，只读仓库权限。
 
 GitHub schedule可能延迟或丢弃，**不能保证永不休眠**。Render免费实例15分钟无流量会休眠，唤醒约1分钟；免费运行时数为工作区共享750小时/月。持续保活会消耗运行额度。可靠免冷启动需另选常驻服务方案，本项目未自动购买付费实例。
+
+### 主题与文本附件
+- 输入框加号包含真实的文本附件和赛马/模型设置；主题提供自由创作、静谧自然、陶土暖色、极简黑白、清透蓝色。
+- 主题用于下次创建或修改生成应用，进入工程模型系统提示并补充确定性的 CSS，不改变原有业务逻辑和存储键。
+- TXT/Markdown/JSON 按参考文本读取；最多 3 个，每个最多 8000 字符且 32KB，总计最多 16000 字符且 64KB。不支持图片/PDF。附件会发送给模型，不要上传密码、密钥或敏感信息。
+- 创建/修改接口接受 `themeId` 和 `attachments: [{name,text}]`；项目保存 `theme_id`、`attachments`。修改不传这两个字段则继承，传空附件数组则清除。旧数据库使用增量迁移。
+- 首页选项保存在当前浏览器会话，项目内选项持久化在数据库；主题选择仅在下次提交生效。附件作为不可信参考资料编码传入，不赋予系统指令权限。
