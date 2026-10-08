@@ -65,7 +65,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     return p;
   }
 
-  app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, mock: cfg.mockOnly }));
+  app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, mock: cfg.mockOnly, commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7) }));
 
   app.get('/api/config', (req, res) => {
     res.json({
