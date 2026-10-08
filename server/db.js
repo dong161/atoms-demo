@@ -86,6 +86,8 @@ export async function openDb({ databaseUrl = process.env.DATABASE_URL, sqlitePat
 
 async function openPg(url) {
   const { default: pg } = await import('pg');
+  // BIGINT（时间戳、COUNT）默认返回字符串，转成数字，与 SQLite 行为一致
+  pg.types.setTypeParser(20, (v) => Number(v));
   const local = /localhost|127\.0\.0\.1/.test(url);
   const pool = new pg.Pool({
     connectionString: url,
