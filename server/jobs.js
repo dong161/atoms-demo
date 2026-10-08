@@ -7,6 +7,9 @@ import { planProject, engineerBuild, reviewBuild, reviewChecklist } from './agen
 import { staticCheck, titleFromHtml } from './html.js';
 
 export const newId = () => crypto.randomUUID();
+export const LAGGING = 'lagging';
+export let LAGGING_GRACE_MS = Number(process.env.RACE_GRACE_MS) || 90_000;
+export const setLaggingGrace = (ms) => (LAGGING_GRACE_MS = ms); // 测试用
 const now = () => Date.now();
 
 export class JobHub {
@@ -202,13 +205,19 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
         : `@Alex ${mode === 'create' ? '按方案开发' : `修改：${instruction}`}`;
     await say('mike', 'race', handoff, { raceId, mode, entries: entries.map((e) => ({ id: e.id, model: e.model })) });
 
+    // 赛马限时：领先的一路完成后，其余路最多再等 LAGGING_GRACE_MS，超时自动淘汰，避免整轮被最慢的一路拖住
+    const laneCtrls = entries.map(() => new AbortController());
+    const pendingLanes = entries.map(() => true);
+    const onJobAbort = () => laneCtrls.forEach((c) => c.abort());
+    signal.addEventListener('abort', onJobAbort, { once: true });
+    let graceTimer = null;
     const results = await Promise.all(
       entries.map((e, i) =>
         buildEntry({
           db,
           cfg,
           emit,
-          signal,
+          signal: laneCtrls[i].signal,
           entry: e,
           variant: i,
           mode,
@@ -218,9 +227,21 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
           instruction: modelInstruction,
           reviewInstruction: instruction,
           themeId,
+        }).then((r) => {
+          if (r.ok && entries.length > 1 && !graceTimer) {
+            graceTimer = setTimeout(() => {
+              laneCtrls.forEach((c) => c.abort(LAGGING));
+              if (laneCtrls.some((c, j) => pendingLanes[j]))
+                emit('status', { agent: 'mike', text: '领先候选已完成，落后太多的模型已自动淘汰' });
+            }, LAGGING_GRACE_MS);
+          }
+          pendingLanes[i] = false;
+          return r;
         }),
       ),
     );
+    clearTimeout(graceTimer);
+    signal.removeEventListener('abort', onJobAbort);
 
     if (signal.aborted) throw new Error('已取消');
     let ok = results.filter((r) => r.ok);
@@ -369,6 +390,7 @@ async function buildEntry({
     });
     return { ok: true, id: entry.id };
   } catch (e) {
+    if (signal.reason === LAGGING) e = new Error(`领先候选完成 ${Math.round(LAGGING_GRACE_MS / 1000)} 秒后仍未完成，已自动淘汰`);
     await db.run('UPDATE race_entries SET status = $1, error = $2, duration_ms = $3 WHERE id = $4', [
       'failed',
       e.message,

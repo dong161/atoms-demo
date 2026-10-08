@@ -177,6 +177,52 @@
     });
   }
 
+  var TEXT_INPUTS =
+    'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]):not([type=range]):not([type=color]), textarea';
+  // 填写所有空的可见输入框（重新渲染后输入框可能被清空，所以每次点击前都补一遍）
+  function fillEmpty(root) {
+    var n = 0;
+    Array.prototype.forEach.call((root || document).querySelectorAll(TEXT_INPUTS), function (el) {
+      if (!visible(el) || el.disabled || el.readOnly || el.value) return;
+      try {
+        setValue(el, sampleFor(el));
+        n++;
+      } catch (e) {
+        /* ignore */
+      }
+    });
+    return n;
+  }
+  function label(el) {
+    return ((el.innerText || el.value || el.getAttribute('aria-label') || el.title || '') + '').trim();
+  }
+  var ADD_RE = /添加|新增|新建|保存|记录|提交|创建|打卡|开始|计算|确定|add|save|create|submit|start|\+/i;
+  var DANGER_RE = /删除|清空|重置|移除|delete|clear|reset|remove|×|✕/i;
+
+  async function measureClick(el) {
+    var changed = 0;
+    var mo = new MutationObserver(function (list) {
+      changed += list.length;
+    });
+    mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    var before = (document.body.innerText || '').length;
+    try {
+      if (el.tagName === 'SELECT') {
+        if (el.options.length > 1) {
+          el.selectedIndex = (el.selectedIndex + 1) % el.options.length;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      } else {
+        el.click();
+      }
+    } catch (e) {
+      errors.push('点击出错：' + e.message);
+    }
+    await wait(160);
+    mo.disconnect();
+    return changed > 0 || (document.body.innerText || '').length !== before;
+  }
+
   async function runProbe() {
     var body = document.body || document.documentElement;
     var report = {
@@ -184,65 +230,62 @@
       elements: body.querySelectorAll('*').length,
       initialErrors: errors.length,
     };
-    var inputs = Array.prototype.filter
-      .call(
-        document.querySelectorAll(
-          'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]), textarea',
-        ),
-        visible,
-      )
-      .slice(0, 6);
-    inputs.forEach(function (el) {
-      if (!el.disabled && !el.readOnly) {
-        try {
-          setValue(el, sampleFor(el));
-        } catch (e) {
-          /* ignore */
-        }
-      }
-    });
-    report.inputs = inputs.length;
-
-    var clickable = Array.prototype.filter.call(
-      document.querySelectorAll(
-        'button, [role=button], input[type=checkbox], input[type=radio], input[type=submit], select, a[href^="#"], [onclick]',
-      ),
-      function (el) {
-        return visible(el) && !el.disabled;
-      },
-    );
-    report.interactive = clickable.length;
     var writesBefore = stats.writes;
+    report.inputs = fillEmpty(document);
+
+    // 先处理表单：填好再提交，模拟“新增一条数据”这类最典型的操作
+    var forms = Array.prototype.filter.call(document.querySelectorAll('form'), visible).slice(0, 3);
     var responsive = 0,
       tried = 0;
-    for (var i = 0; i < clickable.length && tried < 8; i++) {
-      var el = clickable[i];
-      if (!el.isConnected) continue;
+    for (var f = 0; f < forms.length; f++) {
+      var form = forms[f];
+      if (!form.isConnected) continue;
+      fillEmpty(form);
+      var submit = form.querySelector('button[type=submit], input[type=submit], button:not([type])');
       tried++;
-      var changed = 0;
-      var mo = new MutationObserver(function (list) {
-        changed += list.length;
-      });
-      mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-      var before = (document.body.innerText || '').length;
-      try {
-        if (el.tagName === 'SELECT') {
-          if (el.options.length > 1) {
-            el.selectedIndex = (el.selectedIndex + 1) % el.options.length;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-        } else {
-          el.click();
+      if (submit && visible(submit) && !submit.disabled) {
+        if (await measureClick(submit)) responsive++;
+      } else {
+        var changedBefore = stats.writes;
+        try {
+          form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } catch (e) {
+          errors.push('提交出错：' + e.message);
         }
-      } catch (e) {
-        errors.push('点击出错：' + e.message);
+        await wait(160);
+        if (stats.writes > changedBefore) responsive++;
       }
-      await wait(160);
-      mo.disconnect();
-      if (changed > 0 || (document.body.innerText || '').length !== before) responsive++;
+    }
+
+    // 再点其它控件：可能写入数据的按钮优先，删除/清空类放最后。
+    // 每次点击后重新收集（点击可能展开新的按钮，比如“编辑”后出现“添加”）
+    var CLICKABLE = 'button, [role=button], input[type=checkbox], input[type=radio], input[type=submit], select, a[href^="#"], [onclick]';
+    var clicked = new Set();
+    var rank = function (el) {
+      var t = label(el);
+      return DANGER_RE.test(t) ? 2 : ADD_RE.test(t) ? 0 : 1;
+    };
+    var candidates = function () {
+      return Array.prototype.filter
+        .call(document.querySelectorAll(CLICKABLE), function (el) {
+          return visible(el) && !el.disabled && !clicked.has(el) && !(el.form && forms.indexOf(el.form) >= 0 && el.type === 'submit');
+        })
+        .sort(function (x, y) {
+          return rank(x) - rank(y);
+        });
+    };
+    report.interactive = candidates().length;
+    while (tried < 10) {
+      var next = candidates()[0];
+      if (!next) break;
+      clicked.add(next);
+      tried++;
+      fillEmpty(document);
+      if (await measureClick(next)) responsive++;
     }
     report.clicked = tried;
     report.responsive = responsive;
+    report.forms = forms.length;
     report.storageWrites = stats.writes - writesBefore;
     report.storageReads = stats.reads;
     report.errors = errors.slice(0, 10);
