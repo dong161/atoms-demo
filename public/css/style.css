@@ -2399,3 +2399,16 @@ details.review li.miss {
   font-size: 14px;
   color: var(--text);
 }
+
+.hero-visual {
+  margin: 8px auto 28px;
+  max-width: 980px;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.hero-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
