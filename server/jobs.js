@@ -91,7 +91,8 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
   const files=JSON.parse(project.attachments||'[]');
   const themeId=project.theme_id||'default';
   const prompt=referencePrompt(project.prompt,files);
-  instruction=referencePrompt(instruction,files);
+  // 附件只发给模型；对话消息、赛马标题和验收清单保留用户的原话
+  const modelInstruction = referencePrompt(instruction, files);
   const signal = job.ctrl.signal;
   const emit = (type, data) => hub.emit(job, type, data);
   const say = async (role, kind, content, meta) => {
@@ -106,7 +107,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
 
     if (mode === 'create') {
       emit('status', { agent: 'mike', text: 'Mike 正在拆解需求…' });
-      plan = await planProject({ cfg, prompt: instruction, signal });
+      plan = await planProject({ cfg, prompt: modelInstruction, signal });
       await db.run('UPDATE projects SET plan = $1, title = $2, updated_at = $3 WHERE id = $4', [JSON.stringify(plan), plan.title, now(), project.id]);
       emit('project', { title: plan.title });
       await say('mike', 'plan', plan.summary, { plan });
@@ -131,7 +132,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
       : `@Alex ${mode === 'create' ? '按方案开发' : `修改：${instruction}`}`;
     await say('mike', 'race', handoff, { raceId, mode, entries: entries.map((e) => ({ id: e.id, model: e.model })) });
 
-    const results = await Promise.all(entries.map((e, i) => buildEntry({ db, cfg, emit, signal, entry: e, variant: i, mode, plan, prompt, baseHtml, instruction, themeId })));
+    const results = await Promise.all(entries.map((e, i) => buildEntry({ db, cfg, emit, signal, entry: e, variant: i, mode, plan, prompt, baseHtml, instruction: modelInstruction, reviewInstruction: instruction, themeId })));
 
     if (signal.aborted) throw new Error('已取消');
     let ok = results.filter((r) => r.ok);
@@ -146,7 +147,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
       const fb = { id: newId(), model: 'mock' };
       await db.run('INSERT INTO race_entries (id, race_id, model, status, created_at) VALUES ($1,$2,$3,$4,$5)', [fb.id, raceId, fb.model, 'running', now()]);
       emit('entry', { raceId, entry: { id: fb.id, model: 'mock', status: 'running' } });
-      const r = await buildEntry({ db, cfg: { ...cfg, mockOnly: true }, emit, signal, entry: fb, variant: 0, mode, plan, prompt, baseHtml, instruction, themeId });
+      const r = await buildEntry({ db, cfg: { ...cfg, mockOnly: true }, emit, signal, entry: fb, variant: 0, mode, plan, prompt, baseHtml, instruction: modelInstruction, reviewInstruction: instruction, themeId });
       ok = r.ok ? [r] : [];
     }
     if (ok.length === 0) throw new Error('生成失败，请稍后重试');
@@ -169,7 +170,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, mode, m
   }
 }
 
-async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, prompt, baseHtml, instruction, themeId }) {
+async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, prompt, baseHtml, instruction, reviewInstruction = instruction, themeId }) {
   const started = now();
   let chars = 0;
   let tail = '';
@@ -192,7 +193,7 @@ async function buildEntry({ db, cfg, emit, signal, entry, variant, mode, plan, p
     emit('progress', { entryId: entry.id, chars: html.length, tail: '代码已完成，Mike 正在对照需求逐条验收…', status: 'running', reviewing: true });
     const review = await reviewBuild({
       cfg: source === 'mock' ? { ...cfg, mockOnly: true } : cfg,
-      html, checklist: reviewChecklist({ mode, plan, instruction }), signal,
+      html, checklist: reviewChecklist({ mode, plan, instruction: reviewInstruction }), signal,
     });
     const detail = { static: check, review };
     await db.run(

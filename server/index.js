@@ -71,6 +71,29 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     return p;
   }
 
+  // 本机模型网关经 Cloudflare 临时隧道接入，隧道重启后地址会变。
+  // 守护脚本用网关令牌（即 LLM_API_KEY）把新地址报上来，无需改 Render 环境变量。
+  const TUNNEL_URL = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/v1$/;
+  if (!cfg.mockOnly && cfg.apiKey) {
+    const saved = await db.get("SELECT v FROM settings WHERE k = 'llm_base_url'");
+    if (saved && TUNNEL_URL.test(saved.v)) cfg.baseUrl = saved.v;
+  }
+  app.post('/api/admin/llm-endpoint', wrap(async (req, res) => {
+    const h = req.get('authorization') || '';
+    const given = Buffer.from(h.startsWith('Bearer ') ? h.slice(7) : '');
+    const want = Buffer.from(cfg.apiKey || '');
+    if (cfg.mockOnly || !want.length || given.length !== want.length || !crypto.timingSafeEqual(given, want)) return res.status(401).json({ error: 'unauthorized' });
+    const baseUrl = String(req.body?.baseUrl || '');
+    if (!TUNNEL_URL.test(baseUrl)) return res.status(400).json({ error: '只接受 https://*.trycloudflare.com/v1' });
+    await db.run(
+      `INSERT INTO settings (k, v, updated_at) VALUES ('llm_base_url', $1, $2)
+       ON CONFLICT (k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
+      [baseUrl, Date.now()],
+    );
+    cfg.baseUrl = baseUrl;
+    res.json({ ok: true });
+  }));
+
   app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, mock: cfg.mockOnly, commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7) }));
 
   app.get('/api/config', (req, res) => {
