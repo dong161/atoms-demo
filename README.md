@@ -68,7 +68,7 @@ flowchart LR
 - 前端：原生 ES Modules，无构建步骤、无框架
 - 实时通信：Server-Sent Events（SSE），支持断线后回放
 - 模型接入：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 测试：`node --test`（51 个用例）；CI 为 GitHub Actions
+- 测试：`node --test`（55 个用例）；CI 为 GitHub Actions
 - 部署：Render（Free）+ Neon
 
 ## 本地运行
@@ -79,7 +79,7 @@ flowchart LR
 npm install
 cp .env.example .env   # 不填任何模型配置也能运行，自动进入演示模式
 npm start              # http://localhost:3100
-npm test               # 51 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
+npm test               # 55 个测试，使用内存 SQLite 与 mock 模型，不访问外部服务
 ```
 
 不配置 `LLM_*` 时为演示模式：流程完整可用（拆解、赛马、校验、采用、迭代、回退、发布），但生成结果来自 `server/mock/` 下的三个内置模板，修改也只支持换主色和深色模式。配置 `LLM_BASE_URL`、`LLM_MODELS` 后即使用真实模型。本地未设置 `DATABASE_URL` 时数据保存在 `data/atoms-demo.db`。
@@ -145,3 +145,9 @@ npm test               # 51 个测试，使用内存 SQLite 与 mock 模型，�
 首页加入官网远程人物图与明确标注的设计参考图，自写渐变与悬浮动效、响应式布局及减少动态效果支持。来源与使用范围见 [素材来源](docs/素材来源.md)。
 
 真实邮箱密码接口：`POST /api/auth/register`（name/email/password）、`POST /api/auth/login`（email/password）。密码10–128字符，经随机盐scrypt存储；登录签发7天会话；注册恢复码及旧昵称令牌继续兼容。邮箱仅作为账号标识，**没有邮件验证、邮件找回、第三方登录**。旧库自动增加可空邮箱/密码字段及sessions表，迁移可重复执行。首次引导不自动调用模型。
+
+### GitHub 保活（2026-10-09）
+
+`.github/workflows/keepalive.yml` 每5分钟尽力访问 Render 的 `/api/health`，错开整点，保留手动触发并在保活配置变化时立即执行。脚本不仅检查HTTP成功，还要求JSON `ok=true`、数据库postgres；避免把Render返回HTTP200的唤醒页面误报健康。失败最多重试3次，单请求60秒、间隔10秒；任务5分钟超时，只读仓库权限。
+
+GitHub schedule可能延迟或丢弃，**不能保证永不休眠**。Render免费实例15分钟无流量会休眠，唤醒约1分钟；免费运行时数为工作区共享750小时/月。持续保活会消耗运行额度。可靠免冷启动需另选常驻服务方案，本项目未自动购买付费实例。

@@ -1,19 +1,28 @@
-# Render 免费实例闲置 15 分钟会休眠，首次访问要等近 1 分钟。
-# 每 10 分钟访问一次健康检查，保持在线；同时作为线上可用性监控。
+# 尽力减少 Render 免费实例15分钟无流量休眠；GitHub schedule可能延迟，不保证无冷启动。
 name: keepalive
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # UTC分钟3、8、13…58，每5分钟；避开整点高峰。
+    - cron: '3-58/5 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/keepalive.yml'
+      - 'scripts/keepalive.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: false
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - name: Ping /api/health
-        run: |
-          for i in 1 2 3; do
-            if curl -fsS -m 90 https://atoms-demo-i0h8.onrender.com/api/health; then exit 0; fi
-            sleep 10
-          done
-          exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Wake service and verify JSON health
+        run: node scripts/keepalive.mjs
