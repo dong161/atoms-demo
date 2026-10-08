@@ -113,6 +113,7 @@ export async function mountPreview(container, html, { kv, onConsole, onReady, on
     } else if (m.type === 'console') {
       onConsole?.({ level: CONSOLE_LEVELS.has(m.level) ? m.level : 'log', text: str(m.text, 2000) });
     } else if (m.type === 'ready') {
+      handle.ready = true;
       onReady?.();
     } else if (m.type === 'picked' || m.type === 'pick-cancelled') {
       const t = m.target || {};
@@ -140,7 +141,7 @@ export async function mountPreview(container, html, { kv, onConsole, onReady, on
   });
   iframe.srcdoc = srcdoc;
   container.appendChild(iframe);
-  return {
+  const handle = {
     iframe,
     /** 进入/退出点选元素模式 */
     setPick(on) {
@@ -151,6 +152,7 @@ export async function mountPreview(container, html, { kv, onConsole, onReady, on
       iframe.remove();
     },
   };
+  return handle;
 }
 
 /** 等待 iframe 发来指定类型的消息。 */
@@ -174,39 +176,81 @@ function waitFor(iframe, channel, type, timeout) {
  * 自动校验：在离屏 iframe 里加载应用，模拟填写输入、点击按钮，
  * 检查渲染、报错、交互响应、数据持久化与移动端适配，给出 0-100 分。
  */
-export async function probeApp(html, { staticScore = 10, review = null } = {}) {
+const PROBE_MARK = 'QA探针记录';
+
+/** 在离屏 iframe 里加载应用，返回 { iframe, channel, holder }。 */
+async function offscreen(html, data, width = 1024) {
   const channel = newChannel();
   const holder = document.createElement('div');
-  holder.style.cssText = 'position:fixed;left:-20000px;top:0;width:1024px;height:768px;overflow:hidden;pointer-events:none;';
+  holder.style.cssText = `position:fixed;left:-20000px;top:0;width:${width}px;height:768px;overflow:hidden;pointer-events:none;`;
   const iframe = document.createElement('iframe');
   iframe.setAttribute('sandbox', SANDBOX);
-  iframe.style.cssText = 'width:1024px;height:768px;border:0;';
+  iframe.style.cssText = `width:${width}px;height:768px;border:0;`;
   holder.appendChild(iframe);
   document.body.appendChild(holder);
-  try {
-    const ready = waitFor(iframe, channel, 'ready', 8000);
-    iframe.srcdoc = await buildSrcdoc(html, { mode: 'probe', channel });
-    await ready;
-    await new Promise((r) => setTimeout(r, 600));
-    const resultP = waitFor(iframe, channel, 'probe-result', 12000);
-    iframe.contentWindow.postMessage({ __atoms: channel, type: 'probe' }, '*');
-    const result = await resultP;
-    iframe.style.width = '375px';
-    await new Promise((r) => setTimeout(r, 250));
-    const measureP = waitFor(iframe, channel, 'measure-result', 3000);
-    iframe.contentWindow.postMessage({ __atoms: channel, type: 'measure' }, '*');
-    const measure = await measureP;
-    return scoreReport(result?.report ?? null, measure, staticScore, review);
-  } finally {
-    holder.remove();
+  const ready = waitFor(iframe, channel, 'ready', 8000);
+  iframe.srcdoc = await buildSrcdoc(html, { data, mode: 'probe', channel });
+  await ready;
+  await new Promise((r) => setTimeout(r, 600));
+  return { iframe, channel, holder };
+}
+
+/**
+ * 自动校验：在离屏 iframe 里加载应用，模拟填写、提交、点击，检查渲染、报错、交互响应、
+ * 移动端适配；再用交互后的数据快照重新加载一次（模拟刷新），断言数据确实能恢复。
+ */
+export async function probeApp(html, { staticScore = 10, review = null, timeoutMs = 45_000 } = {}) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), timeoutMs);
+  });
+  const run = (async () => {
+    const first = await offscreen(html, {});
+    let result, measure;
+    try {
+      const resultP = waitFor(first.iframe, first.channel, 'probe-result', 15000);
+      first.iframe.contentWindow.postMessage({ __atoms: first.channel, type: 'probe' }, '*');
+      result = await resultP;
+      first.iframe.style.width = '375px';
+      await new Promise((r) => setTimeout(r, 250));
+      const measureP = waitFor(first.iframe, first.channel, 'measure-result', 3000);
+      first.iframe.contentWindow.postMessage({ __atoms: first.channel, type: 'measure' }, '*');
+      measure = await measureP;
+    } finally {
+      first.holder.remove();
+    }
+    const report = result?.report ?? null;
+    let persisted = null;
+    if (report?.snapshot) {
+      const second = await offscreen(html, report.snapshot);
+      try {
+        const checkP = waitFor(second.iframe, second.channel, 'text-check-result', 3000);
+        second.iframe.contentWindow.postMessage({ __atoms: second.channel, type: 'text-check', needle: PROBE_MARK }, '*');
+        const check = await checkP;
+        // 刷新后能看到刚才填写的内容，或页面状态与全新打开时不同（计数类应用不显示文字）
+        persisted = !!check && (check.found || check.text.trim() !== (report.initialText || '').trim());
+      } finally {
+        second.holder.remove();
+      }
+    }
+    return scoreReport(report, measure, staticScore, review, persisted);
+  })();
+  const out = await Promise.race([run, timeout]);
+  clearTimeout(timer);
+  if (out === 'timeout') {
+    const r = scoreReport(null, null, staticScore, review);
+    r.items[0].note = `校验超过 ${Math.round(timeoutMs / 1000)} 秒未完成，可点「重新校验」`;
+    r.timedOut = true;
+    return r;
   }
+  return out;
 }
 
 /**
  * 满分 100：沙箱实测 50（渲染 10 / 无报错 10 / 交互 15 / 持久化 10 / 移动端 5）
  * + AI 需求验收 40 + 代码完整性 10。
  */
-export function scoreReport(report, measure, staticScore = 10, review = null) {
+export function scoreReport(report, measure, staticScore = 10, review = null, persisted = null) {
   const items = [];
   if (!report) {
     items.push({ key: 'render', label: '页面渲染', got: 0, max: 10, note: '页面没有在规定时间内完成加载' });
@@ -235,7 +279,8 @@ export function scoreReport(report, measure, staticScore = 10, review = null) {
       got: report.interactive === 0 ? 0 : Math.round(5 + 10 * ratio),
       note: `${report.interactive} 个可交互控件，抽测 ${report.clicked} 个，${report.responsive} 个有响应`,
     });
-    const persistGot = report.storageWrites > 0 ? 10 : report.storageReads > 0 ? 5 : 0;
+    // 持久化：写入后能在“刷新”后恢复才给满分
+    const persistGot = report.storageWrites > 0 ? (persisted === false ? 6 : 10) : report.storageReads > 0 ? 3 : 0;
     items.push({
       key: 'persist',
       label: '数据持久化',
@@ -243,7 +288,9 @@ export function scoreReport(report, measure, staticScore = 10, review = null) {
       got: persistGot,
       note:
         report.storageWrites > 0
-          ? `交互后写入存储 ${report.storageWrites} 次`
+          ? persisted === false
+            ? `交互后写入 ${report.storageWrites} 次，但模拟刷新后没有恢复刚才的数据`
+            : `交互后写入 ${report.storageWrites} 次，模拟刷新后数据仍在`
           : report.storageReads > 0
             ? '会读取存储，但交互后没有写入'
             : '没有使用存储',

@@ -657,7 +657,11 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   app.use(express.static(path.join(root, 'public'), { extensions: ['html'] }));
   app.get(['/s/:slug', '/preview'], (req, res) => res.sendFile(path.join(root, 'public', 'share.html')));
   app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
-  app.get('*', (req, res) => res.sendFile(path.join(root, 'public', 'index.html')));
+  // 带扩展名的路径是静态资源：不存在就 404，不要回落成首页 HTML（否则缺图会被当成 200 掩盖）
+  app.get('*', (req, res) => {
+    if (/\.[a-z0-9]{1,8}$/i.test(req.path)) return res.status(404).type('text/plain').send('Not found');
+    res.sendFile(path.join(root, 'public', 'index.html'));
+  });
 
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);

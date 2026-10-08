@@ -162,7 +162,7 @@
     if (t === 'date') return new Date().toISOString().slice(0, 10);
     if (t === 'email') return 'test@example.com';
     if (t === 'color') return '#3366ff';
-    return '测试内容';
+    return 'QA探针记录';
   }
   function setValue(el, v) {
     var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -226,6 +226,7 @@
   async function runProbe() {
     var body = document.body || document.documentElement;
     var report = {
+      initialText: (body.innerText || '').slice(0, 5000),
       textLength: (body.innerText || '').trim().length,
       elements: body.querySelectorAll('*').length,
       initialErrors: errors.length,
@@ -288,6 +289,16 @@
     report.forms = forms.length;
     report.storageWrites = stats.writes - writesBefore;
     report.storageReads = stats.reads;
+    // 交互后的数据快照：宿主用它模拟“刷新页面”，检查数据是否真的能恢复
+    if (report.storageWrites > 0) {
+      var snap = {};
+      var size = 0;
+      data.forEach(function (v, k) {
+        size += k.length + v.length;
+        if (size < 300000) snap[k] = v;
+      });
+      report.snapshot = snap;
+    }
     report.errors = errors.slice(0, 10);
     return report;
   }
@@ -385,6 +396,13 @@
       runProbe().then(function (r) {
         post({ type: 'probe-result', report: r });
       });
+    if (m.type === 'text-check') {
+      var bodyText = (document.body && document.body.innerText) || '';
+      var inValues = Array.prototype.some.call(document.querySelectorAll('input, textarea'), function (el) {
+        return String(el.value || '').indexOf(m.needle) >= 0;
+      });
+      post({ type: 'text-check-result', found: bodyText.indexOf(m.needle) >= 0 || inValues, text: bodyText.slice(0, 5000) });
+    }
     if (m.type === 'measure') {
       var de = document.documentElement;
       post({

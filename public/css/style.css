@@ -2431,3 +2431,18 @@ details.review li.miss {
 .showcase-row a:hover {
   text-decoration: underline;
 }
+
+.frame-wrap {
+  position: relative;
+}
+.preview-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  font-size: 14px;
+}

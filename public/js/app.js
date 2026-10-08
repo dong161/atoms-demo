@@ -1165,6 +1165,7 @@ async function renderPreview(box) {
   const preview = await mountPreview($('#frame-wrap'), html, {
     kv,
     onConsole: pushConsole,
+    onReady: () => $('#frame-wrap .preview-loading')?.remove(),
     onPicked: (target) => {
       ws.picking = false;
       $('#vt-pick')?.classList.remove('on');
@@ -1180,12 +1181,21 @@ async function renderPreview(box) {
   // 加载期间用户可能已切换版本/设备：过期的预览直接销毁，不能覆盖当前引用
   if (stale()) return preview.destroy();
   ws.preview = preview;
+  // 应用脚本启动前显示加载提示，避免预览区短暂空白被误认为失败
+  if (!preview.ready) {
+    const loading = document.createElement('div');
+    loading.className = 'preview-loading';
+    loading.innerHTML = '<span class="spinner"></span> 正在启动应用…';
+    $('#frame-wrap')?.appendChild(loading);
+    setTimeout(() => loading.remove(), 8000);
+  }
 }
 
 function pushConsole(line) {
   const ws = state.ws;
   if (!ws) return;
   ws.consoleLines.push({ ...line, at: Date.now() });
+  if (line.level === 'error' && line.text.startsWith('数据同步失败')) toast('应用数据暂时没能保存到云端，正在自动重试，请检查网络', true);
   if (ws.consoleLines.length > 300) ws.consoleLines.shift();
   updateFixButton();
   if (line.level === 'error' && !ws.consoleOpen) {

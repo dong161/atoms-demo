@@ -197,3 +197,19 @@ test('KV 同步：失败重试且不丢数据，期间的新变更不被旧值�
   assert.equal(sync.size, 0);
   assert.equal(maxInflight, 1);
 });
+
+test('缺失的静态资源返回 404，页面路由仍回落到首页', async () => {
+  const t = await boot();
+  try {
+    const img = await fetch(`${t.base}/img/not-exist.webp`);
+    assert.equal(img.status, 404);
+    const ok = await fetch(`${t.base}/img/agent-mike.webp`);
+    assert.equal(ok.status, 200);
+    assert.match(ok.headers.get('content-type'), /image\/webp/);
+    const page = await fetch(`${t.base}/p/whatever`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /text\/html/);
+  } finally {
+    await t.close();
+  }
+});
