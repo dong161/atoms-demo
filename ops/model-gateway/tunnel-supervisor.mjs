@@ -86,6 +86,11 @@ async function runOnce() {
   log('cloudflared exited', code);
 }
 
+// 第二层保活：GitHub 定时任务可能延迟，本机每 10 分钟访问一次线上健康检查，防止 Render 免费实例休眠
+setInterval(() => {
+  ok(`${APP}/api/health`, {}, 90000).then((alive) => alive || log('keepalive: health check failed'));
+}, 10 * 60_000);
+
 for (;;) {
   await runOnce();
   await sleep(5000);
