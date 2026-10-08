@@ -91,7 +91,12 @@ try {
   await pause(2000);
   if (await page.locator('#setup-skip').count()) await page.click('#setup-skip');
   await pause(800);
-  if (!page.url().includes('#/p/') && (await page.locator('#send').count())) await page.click('#send');
+  // 登录后通常会自动提交；只有 8 秒内没有进入项目页才手动再点一次发送
+  const entered = await page.waitForURL(/#\/p\//, { timeout: 8000 }).then(
+    () => true,
+    () => false,
+  );
+  if (!entered) await page.click('#send');
   await page.waitForURL(/#\/p\//, { timeout: 30_000 });
 
   await caption('③ Mike 拆解需求，三路模型同时开发（赛马模式），代码实时输出');
