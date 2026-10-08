@@ -1,4 +1,4 @@
-// Public Atoms homepage images are remote references, not bundled or represented as our own work.
+// 首页分区内容。所有图片均为本项目 AI 原创生成，见 public/img/ATTRIBUTION.md。
 // 角色头像与插画均为本项目 AI 原创生成（见 public/img/ATTRIBUTION.md）
 export const agentAvatars = {
   mike: '/img/agent-mike.webp',
@@ -9,9 +9,9 @@ export const agentAvatars = {
 };
 export function landingSections() {
   const cases = [
-    ['pizzeria-website', '餐饮品牌网站', '从一道招牌菜，讲好品牌故事'],
-    ['portfolio-website', '个人作品集', '让作品成为最好的自我介绍'],
-    ['mental-wellness-platform', '服务产品页面', '把服务变成清晰的在线体验'],
+    ['case-kanban', '任务看板', '优先级、截止日、拖拽排序，一句话就能用'],
+    ['case-portfolio', '个人作品集', '可在线编辑的主页，内容自动保存'],
+    ['case-calculator', '实用小工具', '房贷计算、提前还款对比，结果留存'],
   ];
   return `<section class="landing-section" id="how-it-works"><div class="section-eyebrow">FROM IDEA TO INTERACTION</div><h2>不止生成页面。<br>让想法跑起来。</h2><figure class="hero-visual"><img src="/img/hero-visual.webp" alt="一句话需求被多路模型同时实现，择优胜出的示意图" loading="lazy"></figure><div class="journey-grid">
     <article><span class="journey-number">01</span><h3>说出你的想法</h3><p>像和同事聊天一样，描述场景、功能和风格。AI 团队先拆解需求。</p><div class="mini-chat">“我想做一个可以记录喝水的工具。”<span>Mike · 正在整理需求 ✓</span></div></article>

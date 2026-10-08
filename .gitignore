@@ -6,3 +6,5 @@ node_modules/
 .DS_Store
 data/
 ops/model-gateway/gateway.config.json
+ops/model-gateway/tunnel.url
+ops/model-gateway/*.log
