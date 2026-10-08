@@ -115,14 +115,18 @@ try {
   await tryBtn.click();
   await pause(2500);
   const app = page.frameLocator('#frame-wrap iframe');
-  const input = app.locator('input[type=text], input:not([type]), textarea').first();
+  // 生成的应用千差万别：只操作可见元素，单步失败不影响录制
+  const btn = app.locator('button:visible').first();
+  await btn.click({ timeout: 3000 }).catch(() => {});
+  await pause(1200);
+  const input = app.locator('input[type=text]:visible, input:not([type]):visible, textarea:visible').first();
   if (await input.count()) {
-    await input.fill('准备评审材料');
-    await input.press('Enter');
+    await input.fill('准备评审材料', { timeout: 3000 }).catch(() => {});
+    await input.press('Enter', { timeout: 3000 }).catch(() => {});
   }
   await pause(1500);
-  const btn = app.locator('button').first();
-  if (await btn.count()) await btn.click().catch(() => {});
+  const submit = app.locator('button[type=submit]:visible').first();
+  if (await submit.count()) await submit.click({ timeout: 3000 }).catch(() => {});
   await pause(2500);
 
   await caption('⑥ 采用这个版本（Version 1），数据会同步到云端');
@@ -141,7 +145,7 @@ try {
   if (await page.locator('#vt-pick').count()) {
     await page.click('#vt-pick');
     await pause(1200);
-    await page.frameLocator('#frame-wrap iframe').locator('h1, h2').first().click();
+    await page.frameLocator('#frame-wrap iframe').locator('h1:visible, h2:visible').first().click({ timeout: 5000 });
     await pause(1500);
     await page.fill('#chat-input', '把这个标题改成「我的团队看板」，字号再大一些');
     await pause(1200);

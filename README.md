@@ -4,6 +4,7 @@
 
 - 在线体验：<https://atoms-demo-i0h8.onrender.com>
 - 不想等生成？直接用成品：[项目任务看板](https://atoms-demo-i0h8.onrender.com/s/Db5GK2OY) · [每日喝水打卡](https://atoms-demo-i0h8.onrender.com/s/doS6R8zF)
+- 演示视频（2 分钟，真实模型线上录制，等待片段已加速）：[docs/media/demo.mp4](docs/media/demo.mp4)
 - 设计说明（思路、取舍、完成度、扩展规划）：[docs/说明文档.md](docs/说明文档.md)
 
 ## 核心功能
@@ -73,7 +74,7 @@ flowchart LR
 - 前端：原生 ES Modules，无框架、无构建步骤
 - 实时：Server-Sent Events，令牌走请求头，断线续传
 - 模型：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 质量：75 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行
+- 质量：77 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行
 - 部署：Render 免费实例 + Neon；GitHub Actions 每 5 分钟保活
 
 ## 本地运行
@@ -84,7 +85,7 @@ flowchart LR
 npm install
 cp .env.example .env   # 不填模型配置也能运行，自动进入演示模式
 npm start              # http://localhost:3100
-npm test               # 75 个测试：内存 SQLite + mock 模型，不访问外部服务
+npm test               # 77 个测试：内存 SQLite + mock 模型，不访问外部服务
 npm run format:check
 ```
 
@@ -120,7 +121,7 @@ public/
   js/sandbox.js       预览宿主：注入运行时、数据同步队列、自动校验评分
   js/runtime.js       注入生成应用的运行时：localStorage 替身、报错收集、点选、探针
 ops/model-gateway/    本机模型网关与隧道守护脚本（不含配置与密钥）
-test/                 75 个测试
+test/                 77 个测试
 docs/                 说明文档、素材来源
 ```
 
