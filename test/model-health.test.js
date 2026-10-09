@@ -106,3 +106,17 @@ test('模型清单随隧道地址一起上报：线上配置更新并持久化�
   assert.deepEqual(cfg2.models, ['m1', 'm2', 'm3', 'm4']);
   await db.close();
 });
+
+test('质量先验：同样健康时优先 claude、gemini，gpt-oss 排后；连续失败仍然垫底', () => {
+  const h = new ModelHealth();
+  const models = ['gpt-oss-120b-medium', 'grok-4.7-build-fast', 'gemini-3.8-flash-high', 'claude-sonnet-4-6'];
+  assert.deepEqual(h.rank(models).slice(0, 2), ['claude-sonnet-4-6', 'gemini-3.8-flash-high']);
+  assert.equal(h.rank(models).at(-1), 'gpt-oss-120b-medium');
+  // 慢但可靠的高质量模型不会因为耗时被挤出前三
+  h.record('claude-sonnet-4-6', { ok: true, ms: 200_000 });
+  h.record('gpt-oss-120b-medium', { ok: true, ms: 60_000 });
+  assert.ok(h.rank(models).slice(0, 3).includes('claude-sonnet-4-6'));
+  h.record('claude-sonnet-4-6', { ok: false, ms: 1 });
+  h.record('claude-sonnet-4-6', { ok: false, ms: 1 });
+  assert.equal(h.rank(models).at(-1), 'claude-sonnet-4-6');
+});

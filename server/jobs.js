@@ -8,7 +8,8 @@ import { staticCheck, titleFromHtml } from './html.js';
 
 export const newId = () => crypto.randomUUID();
 export const LAGGING = 'lagging';
-export let LAGGING_GRACE_MS = Number(process.env.RACE_GRACE_MS) || 90_000;
+// 领先一路完成后其余路最多再等这么久：质量高的模型往往更慢，等待太短会让它们总被淘汰
+export let LAGGING_GRACE_MS = Number(process.env.RACE_GRACE_MS) || 150_000;
 export const setLaggingGrace = (ms) => (LAGGING_GRACE_MS = ms); // 测试用
 const now = () => Date.now();
 

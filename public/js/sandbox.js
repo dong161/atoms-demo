@@ -295,12 +295,14 @@ export function scoreReport(report, measure, staticScore = 10, review = null, pe
     items.push({ key: 'render', label: '页面渲染', got: 0, max: 10, note: '页面没有在规定时间内完成加载' });
   } else {
     const renderOk = report.textLength > 40 && report.elements > 15;
+    const base = renderOk ? 10 : report.textLength > 0 ? 5 : 0;
     items.push({
       key: 'render',
       label: '页面渲染',
       max: 10,
-      got: renderOk ? 10 : report.textLength > 0 ? 5 : 0,
-      note: `${report.elements} 个元素，${report.textLength} 字`,
+      // 一打开就被弹窗或遮罩挡住，页面元素再多也不算正常渲染
+      got: report.blocker ? Math.min(base, 2) : base,
+      note: `${report.elements} 个元素，${report.textLength} 字${report.blocker ? `；启动时被${report.blocker.replace('：', '（')}${report.blocker.includes('：') ? '）' : ''}挡住，无法正常使用` : ''}`,
     });
     const errs = report.errors?.length ?? 0;
     items.push({

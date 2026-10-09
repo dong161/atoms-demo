@@ -223,6 +223,32 @@
     return changed > 0 || (document.body.innerText || '').length !== before;
   }
 
+  // 启动时就有弹窗或遮罩盖住页面中央（例如本该隐藏的「确认删除」对话框），用户一打开就没法用
+  function startupBlocker() {
+    var w = window.innerWidth,
+      h = window.innerHeight;
+    var points = [
+      [w / 2, h / 2],
+      [w / 2, h * 0.35],
+    ];
+    for (var i = 0; i < points.length; i++) {
+      var el = document.elementFromPoint(points[i][0], points[i][1]);
+      for (var a = el; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+        var cs = getComputedStyle(a);
+        if (cs.position !== 'fixed') continue;
+        var r = a.getBoundingClientRect();
+        if (r.width * r.height < w * h * 0.25 || Number(cs.opacity) < 0.1 || cs.visibility === 'hidden' || cs.pointerEvents === 'none')
+          continue;
+        var text = (a.innerText || '').trim().replace(/\s+/g, ' ');
+        return (
+          (a.getAttribute('role') === 'dialog' || a.querySelector('[role=dialog], dialog, form, button') ? '弹窗' : '遮罩') +
+          (text ? '：' + text.slice(0, 30) : '')
+        );
+      }
+    }
+    return '';
+  }
+
   async function runProbe() {
     var body = document.body || document.documentElement;
     var report = {
@@ -230,6 +256,7 @@
       textLength: (body.innerText || '').trim().length,
       elements: body.querySelectorAll('*').length,
       initialErrors: errors.length,
+      blocker: startupBlocker(),
     };
     var writesBefore = stats.writes;
     report.inputs = fillEmpty(document);
