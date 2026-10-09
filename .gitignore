@@ -8,3 +8,4 @@ data/
 ops/model-gateway/gateway.config.json
 ops/model-gateway/tunnel.url
 ops/model-gateway/*.log
+.tmp/

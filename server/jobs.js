@@ -108,6 +108,41 @@ async function insertVersion(db, { projectId, html, model, source, score, scoreD
   return v;
 }
 
+/**
+ * 进程重启后收尾：内存里的任务都没了，把残留的 running 标记为中断。
+ * 已经生成完成的候选不能丢：只完成一个就直接采用，完成多个就进入人工选择，一个都没有才算失败。
+ */
+export async function recoverInterruptedRaces(db) {
+  await db.run("UPDATE race_entries SET status = 'failed', error = '服务重启，任务中断' WHERE status = 'running'");
+  const races = await db.all("SELECT id, project_id FROM races WHERE status = 'running'");
+  const summary = [];
+  for (const race of races) {
+    const done = await db.all(
+      "SELECT id, model FROM race_entries WHERE race_id = $1 AND status = 'done' AND html IS NOT NULL ORDER BY COALESCE(score, -1) DESC, created_at",
+      [race.id],
+    );
+    try {
+      if (done.length === 1) {
+        await adoptEntry(db, done[0].id);
+        await addMessage(db, race.project_id, 'system', 'notice', '服务重启中断了其余候选，已自动采用已完成的那一个。');
+        summary.push({ raceId: race.id, result: 'adopted' });
+      } else if (done.length > 1) {
+        await db.run("UPDATE races SET status = 'review' WHERE id = $1", [race.id]);
+        await addMessage(db, race.project_id, 'system', 'notice', '服务重启中断了部分候选，已完成的候选已保留，请选择一个采用。');
+        summary.push({ raceId: race.id, result: 'review' });
+      } else {
+        await db.run("UPDATE races SET status = 'failed' WHERE id = $1", [race.id]);
+        await addMessage(db, race.project_id, 'system', 'error', '服务重启，本轮生成中断，请重新发送需求。');
+        summary.push({ raceId: race.id, result: 'failed' });
+      }
+    } catch (e) {
+      await db.run("UPDATE races SET status = 'failed' WHERE id = $1 AND status = 'running'", [race.id]).catch(() => {});
+      summary.push({ raceId: race.id, result: 'error', error: e.message });
+    }
+  }
+  return summary;
+}
+
 /** 采用某个赛马候选：生成正式版本、在对话里放一张版本卡片。 */
 export async function adoptEntry(db, entryId) {
   const entry = await db.get('SELECT * FROM race_entries WHERE id = $1', [entryId]);

@@ -11,7 +11,7 @@ import { ModelHealth } from './model-health.js';
 import { verifyGoogleIdToken } from './google-auth.js';
 import { openDb } from './db.js';
 import { llmConfig } from './llm.js';
-import { JobHub, runRace, adoptEntry, createVersion, addMessage, newId } from './jobs.js';
+import { JobHub, runRace, adoptEntry, recoverInterruptedRaces, createVersion, addMessage, newId } from './jobs.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_MODELS = 3;
@@ -48,8 +48,8 @@ export async function createApp({
   cfg.health = health;
   db ??= await openDb();
   // 进程重启后，内存里的任务都没了：把残留的 running 标记为失败，避免界面永远转圈
-  await db.run("UPDATE race_entries SET status = 'failed', error = '服务重启，任务中断' WHERE status = 'running'");
-  await db.run("UPDATE races SET status = 'failed' WHERE status = 'running'");
+  // 已完成的候选会保留并采用（recoverInterruptedRaces）
+  await recoverInterruptedRaces(db);
 
   const app = express();
   // Render 前面有一层反向代理：信任一跳，req.ip 才是真实访客 IP（限流按访客区分）
