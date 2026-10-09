@@ -19,6 +19,15 @@ async function ok(url, opts = {}, timeout = 20000) {
   }
 }
 
+// 主力阵容：Claude、Gemini、GPT 三家（按此顺序，第一个也是 Mike 规划/验收的首选）。
+// 三家都可用时只上报它们；有哪家暂时不通，才从其它可用模型里补位凑满 3 路，恢复后下一轮巡检自动换回。
+const PREFERRED = [/claude/i, /gemini/i, /gpt/i];
+function pickLineup(alive) {
+  const main = PREFERRED.map((re) => alive.find((m) => re.test(m))).filter(Boolean);
+  const backup = alive.filter((m) => !main.includes(m));
+  return [...main, ...backup.slice(0, Math.max(0, 3 - main.length))];
+}
+
 // 逐个用一句极短的请求试模型（并行，45 秒内没有正常回复算不可用）；全部失败时退回完整清单，避免线上无模型可选
 let liveModels = models;
 async function probeModels() {
@@ -41,7 +50,7 @@ async function probeModels() {
   const alive = results.filter(Boolean);
   const down = models.filter((m) => !alive.includes(m));
   log(`model probe: ${alive.length}/${models.length} ok${down.length ? `, down: ${down.join(', ')}` : ''}`);
-  return alive.length ? alive : models;
+  return alive.length ? pickLineup(alive) : pickLineup(models);
 }
 
 async function report(base) {
