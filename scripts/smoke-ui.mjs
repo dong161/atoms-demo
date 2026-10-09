@@ -189,16 +189,17 @@ try {
     );
   }
 
-  // ---------- 采用 + 真实操作 + 刷新 ----------
-  // 只有一路成功时系统已自动采用；多路时采用推荐的候选
-  if (await page.locator('[data-adopt]').count()) {
-    const best = (await page.locator('.entry.best [data-adopt]').count())
-      ? page.locator('.entry.best [data-adopt]')
-      : page.locator('[data-adopt]').first();
-    await best.click();
-  } else {
-    await page.reload({ waitUntil: 'networkidle' });
-  }
+  // ---------- 自动采用 + 结论 + 真实操作 + 刷新 ----------
+  // 打完分后系统自动采用最高分，Mike 在对话里写出结论；不再手动点采用
+  await page.waitForSelector('.summary-card', { timeout: 120_000 }).catch(() => {});
+  const summary = await page
+    .locator('.summary-card')
+    .first()
+    .innerText()
+    .catch(() => '');
+  const dd = (await api(page, `/api/projects/${pid}`)).json;
+  check('打完分后 Mike 写出结论并自动采用', /本轮结论/.test(summary) && !!dd.project.current_version_id, summary.split('\n')[0]);
+  check('自动采用后输入框可以继续修改', await page.locator('#chat-input').isEnabled());
   await page.waitForSelector('#frame-wrap iframe', { timeout: 30_000 });
   const sawLoading = await page.locator('.preview-loading').count();
   check('预览有启动加载提示（或已瞬间就绪）', true, sawLoading ? '看到「正在启动应用…」' : '加载很快，提示已移除');
