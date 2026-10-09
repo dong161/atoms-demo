@@ -76,7 +76,7 @@ flowchart LR
 - 前端：原生 ES Modules，无框架、无构建步骤
 - 实时：Server-Sent Events，令牌走请求头，断线续传
 - 模型：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 质量：95 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行；`scripts/smoke-ui.mjs` 用真实浏览器、真实模型在线上逐项验收（24 项：邮箱注册、赛马、自动校验、预览新增数据→云端→刷新仍在、工作流程时间线、新标签页、带数据导出、代码视图、退出再登录项目仍在、Remix、发布与访客隔离、移动端、平台零脚本错误），最近一次 24/24 通过
+- 质量：95 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行；`scripts/smoke-ui.mjs` 用真实浏览器、真实模型在线上逐项验收（26 项：邮箱注册、赛马、自动校验、自动采用与 Mike 结论、采用后可继续修改、预览新增数据→云端→刷新仍在、工作流程时间线、新标签页、带数据导出、代码视图、退出再登录项目仍在、Remix、发布与访客隔离、移动端、平台零脚本错误），最近一次 26/26 通过
 - 部署：Render 免费实例 + Neon；GitHub Actions 每 5 分钟保活
 
 ## 本地运行
