@@ -23,7 +23,7 @@
 | 数据持久化 | 生成应用的 localStorage 自动同步到云端数据库，刷新、换设备都在；同步失败自动重试 |
 | 发布与分享 | 一键发布 `/s/<slug>` 链接，每位访客的数据相互隔离；可更新发布、取消发布 |
 | 账号与初始化 | 邮箱 + 密码注册登录，或仅用昵称快速体验（恢复码换设备）；三步首次引导 |
-| 稳定性 | 任务在服务端运行，刷新/断网后自动续上；截断/中断自动重试；单路失败不影响其它路；无模型时演示模式兜底 |
+| 稳定性 | 任务在服务端运行，刷新/断网后自动续上；截断/中断自动重试；单路失败不影响其它路；按模型健康度自动挑选赛马阵容，Mike 调用失败自动换模型；无模型时演示模式兜底 |
 
 ## 3 分钟快速体验
 
@@ -74,7 +74,7 @@ flowchart LR
 - 前端：原生 ES Modules，无框架、无构建步骤
 - 实时：Server-Sent Events，令牌走请求头，断线续传
 - 模型：任意 OpenAI 兼容的 `/chat/completions` 流式接口
-- 质量：78 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行；`scripts/smoke-ui.mjs` 用真实浏览器在线上逐项验收（19 项，含持久化、访客隔离、Remix、移动端），最近一次 19/19 通过
+- 质量：82 个 `node:test` 用例 + Prettier 格式检查，GitHub Actions 在每次 push 时运行；`scripts/smoke-ui.mjs` 用真实浏览器在线上逐项验收（19 项，含持久化、访客隔离、Remix、移动端），最近一次 19/19 通过
 - 部署：Render 免费实例 + Neon；GitHub Actions 每 5 分钟保活
 
 ## 本地运行
@@ -85,7 +85,7 @@ flowchart LR
 npm install
 cp .env.example .env   # 不填模型配置也能运行，自动进入演示模式
 npm start              # http://localhost:3100
-npm test               # 78 个测试：内存 SQLite + mock 模型，不访问外部服务
+npm test               # 82 个测试：内存 SQLite + mock 模型，不访问外部服务
 npm run format:check
 ```
 
@@ -99,7 +99,7 @@ npm run format:check
 | `DATABASE_URL` | Postgres 连接串；留空用本地 SQLite |
 | `LLM_BASE_URL` | OpenAI 兼容接口地址（到 `/v1`） |
 | `LLM_API_KEY` | 接口密钥（Bearer） |
-| `LLM_MODELS` | 可选模型，逗号分隔；前 3 个为默认赛马阵容 |
+| `LLM_MODELS` | 可选模型，逗号分隔；默认赛马阵容按模型健康度自动挑选前 3 个（也可由模型网关上报覆盖） |
 | `LLM_PLANNER_MODEL` | Mike 拆解与验收用的模型，默认取第一个 |
 | `MOCK_MODE` | 设为 `1` 强制演示模式 |
 
@@ -128,7 +128,7 @@ public/
   js/sandbox.js       预览宿主：注入运行时、数据同步队列、自动校验评分
   js/runtime.js       注入生成应用的运行时：localStorage 替身、报错收集、点选、探针
 ops/model-gateway/    本机模型网关与隧道守护脚本（不含配置与密钥）
-test/                 78 个测试
+test/                 82 个测试
 docs/                 说明文档、素材来源
 ```
 
