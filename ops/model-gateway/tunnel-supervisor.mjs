@@ -19,13 +19,26 @@ async function ok(url, opts = {}, timeout = 20000) {
   }
 }
 
-// 主力阵容：Claude、Gemini、GPT 三家（按此顺序，第一个也是 Mike 规划/验收的首选）。
-// 三家都可用时只上报它们；有哪家暂时不通，才从其它可用模型里补位凑满 3 路，恢复后下一轮巡检自动换回。
-const PREFERRED = [/claude/i, /gemini/i, /gpt/i];
+// 主力阵容：Claude、Gemini、GPT 三家，每家按顺序取第一个可用的子模型（第一个也是 Mike 规划/验收的首选）。
+// 某家整体不可用时，先用 Gemini 的其它子模型补位，最后才用 grok 等其它模型，凑满 3 路；恢复后下一轮巡检自动换回。
+const FAMILIES = [
+  ['claude-sonnet-4-6', 'claude-opus-4-6-thinking'],
+  [
+    'gemini-3.8-flash-high',
+    'gemini-3.8-flash-high-1',
+    'gemini-3.7-flash-high',
+    'gemini-3.6-flash-high',
+    'gemini-3.1-pro-low',
+    'gemini-3-flash',
+  ],
+  ['gpt-oss-120b-medium'],
+];
+const FILL_ORDER = [/gemini/i, /claude/i, /gpt/i, /./];
 function pickLineup(alive) {
-  const main = PREFERRED.map((re) => alive.find((m) => re.test(m))).filter(Boolean);
-  const backup = alive.filter((m) => !main.includes(m));
-  return [...main, ...backup.slice(0, Math.max(0, 3 - main.length))];
+  const main = FAMILIES.map((fam) => fam.find((m) => alive.includes(m))).filter(Boolean);
+  const rest = alive.filter((m) => !main.includes(m));
+  const fill = FILL_ORDER.flatMap((re) => rest.filter((m) => re.test(m))).filter((m, i, a) => a.indexOf(m) === i);
+  return [...main, ...fill.slice(0, Math.max(0, 3 - main.length))];
 }
 
 // 逐个用一句极短的请求试模型（并行，45 秒内没有正常回复算不可用）；全部失败时退回完整清单，避免线上无模型可选

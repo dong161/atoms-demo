@@ -2,7 +2,20 @@
   "upstream": "http://127.0.0.1:8317",
   "upstreamKey": "<本机模型服务的 key，不要提交>",
   "token": "<随机生成的网关令牌，与 Render 上的 LLM_API_KEY 相同>",
-  "models": ["grok-4.7-build-fast", "claude-sonnet-4-6", "grok-4.6-low"],
+  "models": [
+    "claude-sonnet-4-6",
+    "gemini-3.8-flash-high",
+    "gpt-oss-120b-medium",
+    "claude-opus-4-6-thinking",
+    "gemini-3.8-flash-high-1",
+    "gemini-3.7-flash-high",
+    "gemini-3.6-flash-high",
+    "gemini-3.1-pro-low",
+    "gemini-3-flash",
+    "grok-4.6-low",
+    "grok-4.7-build-fast",
+    "grok-4.7"
+  ],
   "port": 8399,
   "maxConcurrent": 8
 }
