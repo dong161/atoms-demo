@@ -193,6 +193,7 @@ export function pushConsole(line) {
   if (line.level === 'error' && line.text.startsWith('数据同步失败')) toast('应用数据暂时没能保存到云端，正在自动重试，请检查网络', true);
   if (ws.consoleLines.length > 300) ws.consoleLines.shift();
   updateFixButton();
+  if (line.level === 'error' && !line.text.startsWith('数据同步失败')) maybeAutoFix();
   if (line.level === 'error' && !ws.consoleOpen) {
     const btn = $('#vt-console');
     const n = ws.consoleLines.filter((l) => l.level === 'error').length;
@@ -209,8 +210,32 @@ export function updateFixButton() {
   btn.querySelector('span').textContent = `让 Alex 修复 ${n} 个报错`;
 }
 
+// 自动修复闭环：刚生成的版本一启动就报错时，不等用户发现，自动交给 Alex 修一轮。
+// 每个版本只自动修一次；如果这个版本本身就是修复的结果，不再连环自动修复，改为提示用户。
+const AUTO_FIX_WINDOW_MS = 15 * 60_000;
+let autoFixTimer = null;
+function maybeAutoFix() {
+  const ws = state.ws;
+  const d = ws?.data;
+  if (!d || ws.jobId || ws.view?.type !== 'version' || ws.view.id !== d.project.current_version_id) return;
+  const ver = d.versions.find((v) => v.id === d.project.current_version_id);
+  if (!ver || Date.now() - ver.created_at > AUTO_FIX_WINDOW_MS) return;
+  const key = `atoms.autofix.${ver.id}`;
+  if (store.get(key)) return;
+  const lastUser = [...d.messages].reverse().find((m) => m.role === 'user');
+  if (lastUser?.meta?.fixErrors) return;
+  clearTimeout(autoFixTimer);
+  // 稍等片刻收集同一轮启动里的其它报错，再一起交给 Alex
+  autoFixTimer = setTimeout(() => {
+    if (state.ws !== ws || ws.jobId || store.get(key)) return;
+    store.set(key, true);
+    toast('检测到新版本运行报错，Alex 正在自动修复');
+    fixErrors({ auto: true });
+  }, 2500);
+}
+
 // 一键修复（对应 Atoms 的 Resolve）：把预览控制台的报错交给 Alex
-export async function fixErrors() {
+export async function fixErrors({ auto = false } = {}) {
   const ws = state.ws;
   const errors = [...new Set(ws.consoleLines.filter((l) => l.level === 'error').map((l) => l.text))].slice(0, 5);
   if (!errors.length || ws.jobId) return;
@@ -223,7 +248,7 @@ export async function fixErrors() {
     subscribe(r.jobId);
     renderChat();
     renderComposer();
-    toast('已交给 Alex 修复');
+    if (!auto) toast('已交给 Alex 修复');
   } catch (e) {
     toast(e.message, true);
   }

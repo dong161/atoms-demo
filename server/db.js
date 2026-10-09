@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS app_kv (
 
 export async function openDb({ databaseUrl = process.env.DATABASE_URL, sqlitePath } = {}) {
   if (databaseUrl) return openPg(databaseUrl);
-  return openSqlite(sqlitePath ?? path.resolve('data/atoms-demo.db'));
+  return openSqlite(sqlitePath ?? (process.env.SQLITE_PATH || path.resolve('data/atoms-demo.db')));
 }
 
 async function openPg(url) {

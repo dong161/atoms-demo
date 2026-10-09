@@ -14,7 +14,12 @@ const check = (name, ok, detail = '') => {
 };
 const browser = await chromium.launch();
 const errors = [];
-const watch = (page) => page.on('pageerror', (e) => errors.push(e.message));
+const appErrors = [];
+// 平台自身的脚本错误必须为零；生成应用（沙箱 iframe，about:srcdoc）的报错由评分扣分和自动修复处理，单独列出
+const watch = (page) =>
+  page.on('pageerror', (e) =>
+    (/about:srcdoc/.test(e.stack || '') || !/\/(js\/|share)/.test(e.stack || '') ? appErrors : errors).push(e.message),
+  );
 
 async function token(page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('atoms.token')));
@@ -29,6 +34,43 @@ async function api(page, path, opts = {}) {
     { path, opts, t },
   );
 }
+// 在生成的应用里新增一条记录：优先在弹出的对话框 / 表单里填写，所有文本框都写入带标记的文字，
+// 避免把标记填进顶栏搜索框之类的无关输入框
+const SAVE_RE = /^\s*(保存|添加|确定|提交|创建|完成)/;
+async function addRecord(app, page, mark) {
+  const opener = app.locator('button:visible', { hasText: /新建|添加|新增|\+/ }).first();
+  if (await opener.count()) await opener.click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const dialog = app.locator('[role=dialog]:visible, dialog[open], .modal:visible, .modal-overlay:visible .modal, .drawer:visible').last();
+  const scope = (await dialog.count()) ? dialog : app.locator('form:visible').first().or(app.locator('body'));
+  const inputs = scope.locator('input[type=text]:visible, input:not([type]):visible, textarea:visible');
+  const n = await inputs.count();
+  for (let i = 0; i < n; i++)
+    await inputs
+      .nth(i)
+      .fill(i === 0 ? mark : `${mark}-${i}`, { timeout: 3000 })
+      .catch(() => {});
+  const dates = scope.locator('input[type=date]:visible');
+  for (let i = 0; i < (await dates.count()); i++)
+    await dates
+      .nth(i)
+      .fill('2026-10-20', { timeout: 3000 })
+      .catch(() => {});
+  const submit = scope.locator('button[type=submit]:visible, form button:not([type]):visible').first();
+  if (await submit.count()) await submit.click({ timeout: 3000 }).catch(() => {});
+  else if (await scope.locator('button:visible', { hasText: SAVE_RE }).count())
+    await scope
+      .locator('button:visible', { hasText: SAVE_RE })
+      .last()
+      .click({ timeout: 3000 })
+      .catch(() => {});
+  else if (n)
+    await inputs
+      .first()
+      .press('Enter')
+      .catch(() => {});
+}
+
 async function idle(page, pid, timeout = 420_000) {
   const t0 = Date.now();
   for (;;) {
@@ -125,38 +167,7 @@ try {
   check('预览有启动加载提示（或已瞬间就绪）', true, sawLoading ? '看到「正在启动应用…」' : '加载很快，提示已移除');
   await page.waitForTimeout(3000);
   const app = page.frameLocator('#frame-wrap iframe');
-  // 打开新增入口（如有），填写所有可见输入框并提交
-  const opener = app.locator('button:visible', { hasText: /新建|添加|新增|\+/ }).first();
-  if (await opener.count()) await opener.click({ timeout: 3000 }).catch(() => {});
-  await page.waitForTimeout(800);
-  const inputs = app.locator('input[type=text]:visible, input:not([type]):visible, textarea:visible');
-  const n = await inputs.count();
-  for (let i = 0; i < n; i++)
-    await inputs
-      .nth(i)
-      .fill(i === 0 ? '冒烟记录' : '冒烟', { timeout: 3000 })
-      .catch(() => {});
-  const dates = app.locator('input[type=date]:visible');
-  for (let i = 0; i < (await dates.count()); i++)
-    await dates
-      .nth(i)
-      .fill('2026-10-20', { timeout: 3000 })
-      .catch(() => {});
-  const SAVE_RE = /^\s*(保存|添加|确定|提交|创建|完成)/;
-  // 提交：表单提交按钮，或文字是保存/添加/确定的普通按钮（很多生成应用用 onclick 而不是 form）
-  const submit = app.locator('button[type=submit]:visible, form button:not([type]):visible').first();
-  if (await submit.count()) await submit.click({ timeout: 3000 }).catch(() => {});
-  else if (await app.locator('button:visible', { hasText: SAVE_RE }).count())
-    await app
-      .locator('button:visible', { hasText: SAVE_RE })
-      .last()
-      .click({ timeout: 3000 })
-      .catch(() => {});
-  else if (n)
-    await inputs
-      .first()
-      .press('Enter')
-      .catch(() => {});
+  await addRecord(app, page, '冒烟记录');
   await page.waitForTimeout(2500);
   const kv = (await api(page, `/api/projects/${pid}/kv`)).json.data;
   check('在预览里新增的数据同步到了云端', JSON.stringify(kv).includes('冒烟记录'), Object.keys(kv).join(','));
@@ -228,29 +239,7 @@ try {
     .innerText()
     .catch(() => '');
   check('访客看不到作者的数据', !vtext.includes('冒烟记录'));
-  const vopener = vapp.locator('button:visible', { hasText: /新建|添加|新增|\+/ }).first();
-  if (await vopener.count()) await vopener.click({ timeout: 3000 }).catch(() => {});
-  await visitor.waitForTimeout(800);
-  const vin = vapp.locator('input[type=text]:visible, input:not([type]):visible, textarea:visible');
-  for (let i = 0; i < (await vin.count()); i++)
-    await vin
-      .nth(i)
-      .fill(i === 0 ? '访客记录' : '访客', { timeout: 3000 })
-      .catch(() => {});
-  const vd = vapp.locator('input[type=date]:visible');
-  for (let i = 0; i < (await vd.count()); i++)
-    await vd
-      .nth(i)
-      .fill('2026-10-21', { timeout: 3000 })
-      .catch(() => {});
-  const vsub = vapp.locator('button[type=submit]:visible, form button:not([type]):visible').first();
-  if (await vsub.count()) await vsub.click({ timeout: 3000 }).catch(() => {});
-  else if (await vapp.locator('button:visible', { hasText: SAVE_RE }).count())
-    await vapp
-      .locator('button:visible', { hasText: SAVE_RE })
-      .last()
-      .click({ timeout: 3000 })
-      .catch(() => {});
+  await addRecord(vapp, visitor, '访客记录');
   await visitor.waitForTimeout(2500);
   await visitor.reload({ waitUntil: 'networkidle' });
   await visitor.waitForTimeout(3500);
@@ -275,7 +264,10 @@ try {
   const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check('手机首页无横向溢出', overflow <= 2, `${overflow}px`);
 
-  check('全程没有页面脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));
+  check('平台页面全程没有脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));
+  console.log(
+    `INFO  生成应用自身的运行报错 ${appErrors.length} 条${appErrors.length ? `：${[...new Set(appErrors)].slice(0, 2).join(' | ')}（已计入评分，新版本会自动修复一轮）` : ''}`,
+  );
 } catch (e) {
   check('流程执行', false, e.message);
 } finally {
