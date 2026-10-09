@@ -43,6 +43,10 @@ select {
 a {
   color: var(--primary);
 }
+/* 带 display 的组件类会覆盖浏览器对 hidden 属性的默认隐藏，这里强制生效 */
+[hidden] {
+  display: none !important;
+}
 .hidden {
   display: none !important;
 }
