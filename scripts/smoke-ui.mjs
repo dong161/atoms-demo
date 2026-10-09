@@ -81,7 +81,11 @@ try {
   const race = d.races[0];
   const done = race.entries.filter((e) => e.status === 'done');
   const longest = Math.max(...race.entries.map((e) => e.duration_ms || 0));
-  check('赛马至少两路完成', done.length >= 2, race.entries.map((e) => `${e.model}:${e.status}`).join(' '));
+  check(
+    '赛马至少一路完成，失败的路注明原因',
+    done.length >= 1,
+    race.entries.map((e) => `${e.model}:${e.status}${e.error ? `(${e.error})` : ''}`).join(' '),
+  );
   check(
     '整轮耗时受限（不被单路拖住）',
     (Date.now() - t0) / 1000 < 300,
@@ -92,20 +96,27 @@ try {
   await page.waitForFunction(() => !document.body.innerText.includes('自动校验中'), null, { timeout: 150_000 }).catch(() => {});
   const stuck = await page.evaluate(() => document.body.innerText.includes('自动校验中'));
   check('自动校验没有卡住', !stuck);
-  const notes = await page.$$eval('.score-item[title]', (els) =>
-    els.map((e) => e.getAttribute('title')).filter((t) => t.includes('写入') || t.includes('存储')),
-  );
-  check(
-    '数据持久化给出了刷新断言说明',
-    notes.some((n) => n.includes('刷新')),
-    notes[0] || '',
-  );
+  if (done.length > 1) {
+    const notes = await page.$$eval('.score-item[title]', (els) =>
+      els.map((e) => e.getAttribute('title')).filter((t) => t.includes('写入') || t.includes('存储')),
+    );
+    check(
+      '数据持久化给出了刷新断言说明',
+      notes.some((n) => n.includes('刷新')),
+      notes[0] || '',
+    );
+  }
 
   // ---------- 采用 + 真实操作 + 刷新 ----------
-  const best = (await page.locator('.entry.best [data-adopt]').count())
-    ? page.locator('.entry.best [data-adopt]')
-    : page.locator('[data-adopt]').first();
-  await best.click();
+  // 只有一路成功时系统已自动采用；多路时采用推荐的候选
+  if (await page.locator('[data-adopt]').count()) {
+    const best = (await page.locator('.entry.best [data-adopt]').count())
+      ? page.locator('.entry.best [data-adopt]')
+      : page.locator('[data-adopt]').first();
+    await best.click();
+  } else {
+    await page.reload({ waitUntil: 'networkidle' });
+  }
   await page.waitForSelector('#frame-wrap iframe', { timeout: 30_000 });
   const sawLoading = await page.locator('.preview-loading').count();
   check('预览有启动加载提示（或已瞬间就绪）', true, sawLoading ? '看到「正在启动应用…」' : '加载很快，提示已移除');

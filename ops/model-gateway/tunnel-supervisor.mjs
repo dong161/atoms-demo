@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 
 const DIR = new URL('.', import.meta.url).pathname;
-const { token, port = 8399 } = JSON.parse(fs.readFileSync(`${DIR}gateway.config.json`, 'utf8'));
+const { token, port = 8399, models = [] } = JSON.parse(fs.readFileSync(`${DIR}gateway.config.json`, 'utf8'));
 const APP = 'https://atoms-demo-i0h8.onrender.com';
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -28,7 +28,7 @@ async function register(base) {
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ baseUrl: `${base}/v1` }),
+            body: JSON.stringify({ baseUrl: `${base}/v1`, models }), // 模型清单以本机网关白名单为准
           },
           90000,
         )
