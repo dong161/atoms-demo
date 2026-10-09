@@ -1,6 +1,7 @@
 // 项目操作：采用、回退、Remix、重命名、下载、发布、版本历史
 import { $, ICONS, api, esc, fmtTime, modelLabel, state, toast } from './core.js';
 import { renderViewer } from './preview.js';
+import { exportHtml, saveHtmlFile } from './sandbox.js';
 import { reloadProject, renderWorkspace, setView } from './workspace.js';
 
 // ---------- 动作 ----------
@@ -78,13 +79,13 @@ export async function downloadCurrent() {
   const id = ws.data.project.current_version_id;
   if (!id) return;
   try {
-    const { html, seq } = await api(`/api/versions/${id}/html`);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${ws.data.project.title.replace(/[\\/:*?"<>|]/g, '_')}-v${seq}.html`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    const [{ html, seq }, kv] = await Promise.all([
+      api(`/api/versions/${id}/html`),
+      api(`/api/projects/${ws.id}/kv`).catch(() => ({ data: {} })),
+    ]);
+    const data = kv.data || {};
+    saveHtmlFile(`${ws.data.project.title}-v${seq}`, exportHtml(html, data));
+    toast(Object.keys(data).length ? '已导出 HTML（包含当前数据），双击即可在浏览器中运行' : '已导出 HTML，双击即可在浏览器中运行');
   } catch (e) {
     toast(e.message, true);
   }

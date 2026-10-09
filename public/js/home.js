@@ -1,5 +1,5 @@
 // 首页：落地页、输入框、示例、我的项目
-import { showAccount, showFirstRun, showOnboarding } from './auth.js';
+import { bindUserMenu, showFirstRun, showOnboarding, showSettings, userMenu } from './auth.js';
 import { bindComposerOptions, optionsMarkup, readComposerOptions, saveComposerOptions } from './composer-options.js';
 import { $, AGENTS, EXAMPLES, ICONS, api, esc, fmtTime, raceModels, state, store, toast, userAvatar } from './core.js';
 import { agentAvatars, inspirationPrompts, landingSections, showcases } from './landing.js';
@@ -7,7 +7,7 @@ import { closeWorkspace } from './workspace.js';
 
 // ======================= 首页 =======================
 export function topbar() {
-  return `<header class="topbar landing-nav"><a class="logo" href="#/"><span class="logo-mark">◎</span>Atoms <small>DEMO</small></a><nav aria-label="首页导航"><a href="#how-it-works" data-scroll="how-it-works">如何工作</a><a href="#inspiration" data-scroll="inspiration">设计灵感</a><a href="#team" data-scroll="team">AI 团队</a></nav><div class="nav-actions">${state.user ? `<button class="btn ghost" id="guide-btn">使用引导</button><button class="btn ghost user-chip" id="account-btn">${userAvatar(state.user.name)}<span>${esc(state.user.name)}</span></button>` : '<button class="btn ghost sm" id="login-btn">登录</button><button class="btn primary sm" id="signup-btn">免费开始 ↗</button>'}</div></header>`;
+  return `<header class="topbar landing-nav"><a class="logo" href="#/"><span class="logo-mark">◎</span>Atoms <small>DEMO</small></a><nav aria-label="首页导航"><a href="#how-it-works" data-scroll="how-it-works">如何工作</a><a href="#inspiration" data-scroll="inspiration">设计灵感</a><a href="#team" data-scroll="team">AI 团队</a></nav><div class="nav-actions">${state.user ? userMenu() : '<button class="btn ghost sm" id="login-btn">登录</button><button class="btn primary sm" id="signup-btn">免费开始 ↗</button>'}</div></header>`;
 }
 
 export function raceControls() {
@@ -51,7 +51,8 @@ export async function renderHome() {
     <div class="showcase-row">不想等生成？先用用成品：${showcases.map((c) => `<a href="${c.url}" target="_blank" rel="noopener">${esc(c.title)} ↗</a>`).join('')}</div>
     </div>
     ${state.config.mockOnly ? '<div class="notice">当前为<b>演示模式</b>（未配置模型 API Key）：完整流程可体验，生成结果来自内置示例。</div>' : ''}
-    <div class="section-title"><h2>我的项目</h2><span id="proj-count"></span></div>
+    <div class="section-title" id="projects-section"><h2>我的项目</h2><span id="proj-count"></span></div>
+    ${state.user && !state.user.email && !state.user.google ? '<div class="notice bind-nudge">你的账号还没有设置登录方式，设置后才能在其他设备登录并找回这些项目。<button class="link" id="bind-nudge">去设置 →</button></div>' : ''}
     <div id="projects">${state.user ? '<div class="empty"><span class="spinner"></span></div>' : '<div class="empty">创建账号后，你的项目会出现在这里</div>'}</div>
     ${landingSections()}
   </main>`;
@@ -93,10 +94,10 @@ export async function renderHome() {
     bindRaceControls(slot, () => drawOptions());
   };
   drawOptions();
-  $('#account-btn') && ($('#account-btn').onclick = showAccount);
+  bindUserMenu();
+  $('#bind-nudge') && ($('#bind-nudge').onclick = showSettings);
   $('#login-btn') && ($('#login-btn').onclick = () => showOnboarding({ mode: 'login' }));
   $('#signup-btn') && ($('#signup-btn').onclick = () => showOnboarding({ mode: 'register' }));
-  $('#guide-btn') && ($('#guide-btn').onclick = () => showFirstRun());
   $('#bottom-start').onclick = () => {
     if (!state.user) showOnboarding({ mode: 'register' });
     else {

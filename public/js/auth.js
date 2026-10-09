@@ -1,10 +1,13 @@
-// 账号：注册 / 登录 / 恢复码、首次引导、账号菜单
+// 账号：Google / 邮箱登录注册、首次引导、头像下拉菜单与账号设置
 import { render } from './app.js';
-import { $, AGENTS, EXAMPLES, api, esc, state, store, toast } from './core.js';
+import { $, AGENTS, EXAMPLES, api, esc, state, store, toast, userAvatar } from './core.js';
 import { agentAvatars } from './landing.js';
 
-// ======================= 账号（注册 / 恢复码） =======================
+// ======================= 账号 =======================
 export function logout(expired = false) {
+  // 主动退出时让服务端吊销本次会话；令牌已失效时不必再请求
+  if (!expired && state.token)
+    fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` } }).catch(() => {});
   state.token = null;
   state.user = null;
   store.del('atoms.token');
@@ -51,6 +54,7 @@ export function accessibleDialog(mask, close) {
   };
 }
 export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
+  if (mode !== 'login') mode = 'register';
   if (document.querySelector('.auth-mask')) return;
   const mask = document.createElement('div');
   mask.className = 'modal-mask auth-mask';
@@ -88,7 +92,7 @@ export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
     }
   };
   const draw = () => {
-    mask.innerHTML = `<div class="auth-shell" role="dialog" aria-modal="true" aria-labelledby="auth-title"><aside class="auth-art"><div class="auth-brand">◎ Atoms <small>DEMO</small></div><div class="auth-orbit">${['mike', 'emma', 'alex'].map((k) => `<img src="${agentAvatars[k]}" alt="${AGENTS[k].name}">`).join('')}</div><h2>一个想法，<br>一整个 AI 团队。</h2><p>从第一句话，到第一个能点击的产品。你的创作之旅，从这里开始。</p><small>独立演示项目 · 非 Atoms 官方账号</small></aside><section class="auth-content"><button class="icon-btn auth-close" id="auth-close" aria-label="关闭登录窗口">✕</button><div class="auth-tabs"><button type="button" data-auth-mode="login" class="${mode === 'login' ? 'active' : ''}">登录</button><button type="button" data-auth-mode="register" class="${mode === 'register' ? 'active' : ''}">注册</button></div><h2 id="auth-title">${{ login: '欢迎回来', register: '开启你的创作之旅', guest: '先体验，再决定', restore: '恢复你的项目' }[mode]}</h2><p>${{ login: '登录后，继续你的项目和创作。', register: '创建账号，让你的想法有一个长期的家。', guest: '只需昵称，无需邮箱。请保存账号恢复码。', restore: '使用之前保存的恢复码，不会新建账号。' }[mode]}</p>${state.config.googleClientId && (mode === 'login' || mode === 'register') ? '<div class="google-login"><div id="google-btn" aria-label="使用 Google 账号登录"></div><div class="auth-divider"><span>或使用邮箱</span></div></div>' : ''}<form id="auth-form">${mode === 'register' || mode === 'guest' ? '<label for="auth-name">昵称</label><input class="field" id="auth-name" name="nickname" autocomplete="nickname" maxlength="30" required placeholder="怎么称呼你？">' : ''}${mode === 'login' || mode === 'register' ? `<label for="auth-email">邮箱</label><input class="field" id="auth-email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"><label for="auth-password">密码</label><div class="password-field"><input class="field" id="auth-password" type="password" minlength="10" maxlength="128" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required placeholder="至少 10 个字符"><button type="button" id="password-eye" aria-label="显示密码">显示</button></div>` : ''}${mode === 'restore' ? '<label for="auth-code">账号恢复码</label><input class="field" id="auth-code" type="password" autocomplete="off" required placeholder="粘贴恢复码">' : ''}<div class="auth-error" id="auth-error" role="alert"></div><button class="btn primary auth-submit" type="submit">${{ login: '登录并继续', register: '创建账号', guest: '开始体验', restore: '恢复账号' }[mode]} ↗</button></form><div class="auth-alternatives"><button class="link" data-auth-mode="guest">仅用昵称快速体验</button><span>·</span><button class="link" data-auth-mode="restore">用恢复码登录</button></div><p class="auth-disclaimer">邮箱仅作为账号标识，暂不支持邮件验证或邮件找回密码。已有昵称账号请使用恢复码登录。</p></section></div>`;
+    mask.innerHTML = `<div class="auth-shell" role="dialog" aria-modal="true" aria-labelledby="auth-title"><aside class="auth-art"><div class="auth-brand">◎ Atoms <small>DEMO</small></div><div class="auth-orbit">${['mike', 'emma', 'alex'].map((k) => `<img src="${agentAvatars[k]}" alt="${AGENTS[k].name}">`).join('')}</div><h2>一个想法，<br>一整个 AI 团队。</h2><p>从第一句话，到第一个能点击的产品。你的创作之旅，从这里开始。</p><small>独立演示项目 · 非 Atoms 官方账号</small></aside><section class="auth-content"><button class="icon-btn auth-close" id="auth-close" aria-label="关闭登录窗口">✕</button><div class="auth-tabs"><button type="button" data-auth-mode="login" class="${mode === 'login' ? 'active' : ''}">登录</button><button type="button" data-auth-mode="register" class="${mode === 'register' ? 'active' : ''}">注册</button></div><h2 id="auth-title">${mode === 'login' ? '欢迎回来' : '开启你的创作之旅'}</h2><p>${mode === 'login' ? '登录后，继续你的项目和创作。' : '创建账号，你的项目会保存在云端，换设备也能继续。'}</p>${state.config.googleClientId ? '<div class="google-login"><div id="google-btn" aria-label="使用 Google 账号登录"></div><div class="auth-divider"><span>或使用邮箱</span></div></div>' : ''}<form id="auth-form">${mode === 'register' ? '<label for="auth-name">昵称</label><input class="field" id="auth-name" name="nickname" autocomplete="nickname" maxlength="30" required placeholder="怎么称呼你？">' : ''}${`<label for="auth-email">邮箱</label><input class="field" id="auth-email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"><label for="auth-password">密码</label><div class="password-field"><input class="field" id="auth-password" type="password" minlength="10" maxlength="128" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required placeholder="至少 10 个字符"><button type="button" id="password-eye" aria-label="显示密码">显示</button></div>`}<div class="auth-error" id="auth-error" role="alert"></div><button class="btn primary auth-submit" type="submit">${mode === 'login' ? '登录并继续' : '创建账号'} ↗</button></form><p class="auth-switch">${mode === 'login' ? '还没有账号？<button class="link" data-auth-mode="register">免费注册</button>' : '已有账号？<button class="link" data-auth-mode="login">直接登录</button>'}</p><p class="auth-disclaimer">暂不支持通过邮件找回密码，推荐使用 Google 登录。</p></section></div>`;
     $('#auth-close', mask).onclick = close;
     mask.querySelectorAll('[data-auth-mode]').forEach(
       (b) =>
@@ -115,25 +119,18 @@ export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
       $('#auth-error', mask).textContent = '';
       const oldToken = state.token;
       try {
-        let r;
-        if (mode === 'restore') {
-          state.token = $('#auth-code', mask).value.trim();
-          r = await api('/api/me');
-          r.token = state.token;
-        } else if (mode === 'guest') r = await api('/api/users', { method: 'POST', body: { name: $('#auth-name', mask).value.trim() } });
-        else
-          r = await api(`/api/auth/${mode}`, {
-            method: 'POST',
-            body: {
-              email: $('#auth-email', mask).value.trim(),
-              password: pw.value,
-              ...(mode === 'register' ? { name: $('#auth-name', mask).value.trim() } : {}),
-            },
-          });
-        await finishLogin(r, mode === 'guest' || mode === 'register');
+        const r = await api(`/api/auth/${mode}`, {
+          method: 'POST',
+          body: {
+            email: $('#auth-email', mask).value.trim(),
+            password: pw.value,
+            ...(mode === 'register' ? { name: $('#auth-name', mask).value.trim() } : {}),
+          },
+        });
+        await finishLogin(r, mode === 'register');
       } catch (err) {
         state.token = oldToken;
-        $('#auth-error', mask).textContent = err.status === 401 ? '邮箱、密码或恢复码不正确' : err.message;
+        $('#auth-error', mask).textContent = err.status === 401 ? '邮箱或密码不正确' : err.message;
         busy = false;
         buttons.forEach((b) => (b.disabled = false));
       }
@@ -196,38 +193,158 @@ export function showFirstRun({ afterDone } = {}) {
   draw();
 }
 
-export function showAccount() {
+// ---------- 头像下拉菜单 ----------
+export function userMenu() {
+  const u = state.user;
+  return `<div class="user-menu"><button class="btn ghost user-chip" id="account-btn" aria-haspopup="menu" aria-expanded="false">${userAvatar(u.name)}<span>${esc(u.name)}</span><i class="caret">⌄</i></button><div class="menu hidden" role="menu" id="account-menu"><div class="menu-head">${userAvatar(u.name)}<div><b>${esc(u.name)}</b><small>${u.email ? esc(u.email) : '未设置登录方式'}</small></div></div><button role="menuitem" data-menu="projects"><i>▦</i><span>我的项目</span></button><button role="menuitem" data-menu="settings"><i>⚙</i><span>账号设置</span>${hasLogin(u) ? '' : '<em class="dot" title="需要设置登录方式"></em>'}</button><button role="menuitem" data-menu="guide"><i>✦</i><span>使用引导</span></button><hr><button role="menuitem" data-menu="logout" class="danger"><i>⏻</i><span>退出登录</span></button></div></div>`;
+}
+
+const hasLogin = (u) => !!(u?.email || u?.google);
+
+export function bindUserMenu(root = document) {
+  const btn = $('#account-btn', root);
+  const menu = $('#account-menu', root);
+  if (!btn || !menu) return;
+  const set = (open) => {
+    menu.classList.toggle('hidden', !open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      menu.querySelector('[role=menuitem]')?.focus();
+      setTimeout(() => document.addEventListener('pointerdown', outside));
+    } else document.removeEventListener('pointerdown', outside);
+  };
+  const outside = (e) => {
+    if (!menu.contains(e.target) && !btn.contains(e.target)) set(false);
+  };
+  btn.onclick = () => set(menu.classList.contains('hidden'));
+  menu.onkeydown = (e) => {
+    const items = [...menu.querySelectorAll('[role=menuitem]')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') {
+      set(false);
+      btn.focus();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+    }
+  };
+  menu.querySelectorAll('[data-menu]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        set(false);
+        const act = b.dataset.menu;
+        if (act === 'projects') goProjects();
+        else if (act === 'settings') showSettings();
+        else if (act === 'guide') showFirstRun();
+        else if (act === 'logout') confirmLogout();
+      }),
+  );
+}
+
+function goProjects() {
+  const scroll = () => document.getElementById('projects-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (location.hash && location.hash !== '#/') {
+    location.hash = '#/';
+    setTimeout(scroll, 300);
+  } else scroll();
+}
+
+function confirmLogout() {
+  if (!hasLogin(state.user)) {
+    // 早期快速体验创建的账号没有登录方式：退出前先引导设置，否则退出后无法再登录
+    if (confirm('你的账号还没有设置登录方式，退出后将无法再次登录。现在去设置吗？')) return showSettings();
+    if (!confirm('确定不设置，直接退出吗？')) return;
+  }
+  logout();
+  toast('已退出登录');
+}
+
+// ---------- 账号设置 ----------
+export function showSettings() {
+  const u = state.user;
   const mask = document.createElement('div');
   mask.className = 'modal-mask';
+  const method = u.google ? `Google 账号${u.email ? ` · ${esc(u.email)}` : ''}` : u.email ? `邮箱密码 · ${esc(u.email)}` : '';
   mask.innerHTML = `
-    <div class="modal" role="dialog" aria-modal="true">
-      <h2>账号</h2>
-      <p>昵称：<b>${esc(state.user?.name)}</b><br>换设备时，用下面的恢复码登录即可找回所有项目。请像密码一样保管它。</p>
-      <button class="btn sm" id="ac-reveal">显示恢复码 / 当前会话码</button><div class="code-box hidden" id="ac-secret">${esc(state.token)}</div><p>邮箱账号也可用密码重新登录。登录会话码有效期7天；注册时的恢复码请私下保管。</p>
-      <div class="row">
-        <button class="btn danger" id="ac-out">退出登录</button>
-        <button class="btn" id="ac-copy">复制恢复码</button>
-        <button class="btn primary" id="ac-close">完成</button>
-      </div>
+    <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="st-title">
+      <h2 id="st-title">账号设置</h2>
+      <section class="settings-sec">
+        <h3>个人资料</h3>
+        <form id="st-name-form" class="settings-row">
+          ${userAvatar(u.name)}
+          <input class="field" id="st-name" maxlength="30" required value="${esc(u.name)}" aria-label="昵称">
+          <button class="btn" type="submit">保存</button>
+        </form>
+      </section>
+      <section class="settings-sec">
+        <h3>登录方式</h3>
+        ${
+          method
+            ? `<p class="settings-ok">✓ ${method}<br><small>退出后用它重新登录，项目都保存在云端。</small></p>`
+            : `<p class="settings-warn">还没有设置登录方式。设置后可以在任何设备登录，并找回你的项目。</p>
+        ${state.config.googleClientId ? '<div id="bind-google"></div><div class="auth-divider"><span>或使用邮箱</span></div>' : ''}
+        <form id="bind-form" class="bind-form">
+          <input class="field" id="bind-email" type="email" maxlength="254" autocomplete="email" required placeholder="邮箱">
+          <input class="field" id="bind-password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required placeholder="设置密码（至少 10 个字符）">
+          <button class="btn primary" type="submit">设置邮箱登录</button>
+        </form>`
+        }
+        <div class="auth-error" id="st-error" role="alert"></div>
+      </section>
+      <div class="row"><button class="btn primary" id="st-close">完成</button></div>
     </div>`;
   document.body.appendChild(mask);
-  mask.onclick = (e) => {
-    if (e.target === mask) mask.remove();
+  let remove;
+  const close = () => remove();
+  remove = accessibleDialog(mask, close);
+  $('#st-close', mask).onclick = close;
+  const err = (m) => ($('#st-error', mask).textContent = m);
+  const updated = async (user, msg) => {
+    state.user = user;
+    close();
+    await render();
+    toast(msg);
   };
-  $('#ac-reveal', mask).onclick = () => {
-    $('#ac-secret', mask).classList.toggle('hidden');
+  $('#st-name-form', mask).onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('/api/me', { method: 'PATCH', body: { name: $('#st-name', mask).value.trim() } });
+      updated(r.user, '昵称已更新');
+    } catch (e2) {
+      err(e2.message);
+    }
   };
-  $('#ac-close', mask).onclick = () => mask.remove();
-  $('#ac-copy', mask).onclick = () =>
-    navigator.clipboard.writeText(state.token).then(
-      () => toast('已复制恢复码'),
-      () => toast('复制失败，请手动选择复制', true),
-    );
-  $('#ac-out', mask).onclick = () => {
-    if (!confirm('退出后可用邮箱密码或已保存的恢复码登录。确定退出吗？')) return;
-    mask.remove();
-    logout();
-  };
+  if (!method) {
+    $('#bind-form', mask).onsubmit = async (e) => {
+      e.preventDefault();
+      err('');
+      try {
+        const r = await api('/api/auth/bind-email', {
+          method: 'POST',
+          body: { email: $('#bind-email', mask).value.trim(), password: $('#bind-password', mask).value },
+        });
+        updated(r.user, '已设置邮箱登录');
+      } catch (e2) {
+        err(e2.message);
+      }
+    };
+    const gbox = $('#bind-google', mask);
+    if (gbox)
+      renderGoogleButton(
+        gbox,
+        'bind',
+        async (credential) => {
+          err('');
+          try {
+            const r = await api('/api/auth/bind-google', { method: 'POST', body: { credential } });
+            updated(r.user, '已关联 Google 账号');
+          } catch (e2) {
+            err(e2.message);
+          }
+        },
+        err,
+      );
+  }
 }
 
 // ---------- Google 登录按钮（Google Identity Services） ----------
@@ -254,13 +371,13 @@ async function renderGoogleButton(el, mode, onCredential, onError) {
       client_id: state.config.googleClientId,
       callback: (resp) => onCredential(resp.credential),
       ux_mode: 'popup',
-      context: mode === 'login' ? 'signin' : 'signup',
+      context: mode === 'login' ? 'signin' : mode === 'bind' ? 'use' : 'signup',
     });
     google.accounts.id.renderButton(el, {
       theme: 'outline',
       size: 'large',
       shape: 'pill',
-      text: mode === 'login' ? 'signin_with' : 'signup_with',
+      text: mode === 'login' ? 'signin_with' : mode === 'bind' ? 'continue_with' : 'signup_with',
       locale: 'zh_CN',
       width: Math.min(el.clientWidth || 360, 400),
     });

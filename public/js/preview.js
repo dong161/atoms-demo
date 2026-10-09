@@ -1,5 +1,5 @@
 // 预览区：应用查看器、Console、点选修改、一键修复
-import { adopt, remixVersion, restoreVersion } from './actions.js';
+import { adopt, downloadCurrent, remixVersion, restoreVersion } from './actions.js';
 import { $, ICONS, api, esc, modelLabel, raceModels, state, store, toast } from './core.js';
 import { renderRace } from './race.js';
 import { mountPreview } from './sandbox.js';
@@ -70,7 +70,8 @@ export async function renderPreview(box) {
       ${
         v.type === 'version'
           ? `<button class="icon-btn" id="vt-reset" title="清空这个应用保存的数据">${ICONS.eraser}</button>
-      <button class="icon-btn" id="vt-open" title="在新标签页打开">${ICONS.open}</button>`
+      <button class="btn sm ghost" id="vt-open" title="在新标签页中全屏运行，数据与这里同步">${ICONS.open}<span class="wide">新标签页打开</span></button>
+      ${v.id === d.project.current_version_id ? `<button class="btn sm ghost" id="vt-download" title="导出为可独立运行的 HTML 文件">${ICONS.download}<span class="wide">导出</span></button>` : ''}`
           : ''
       }
       <button class="icon-btn${ws.consoleOpen ? ' on' : ''}" id="vt-console" title="Console">${ICONS.console}${errCount ? `<sup style="color:var(--err);font-weight:700">${errCount}</sup>` : ''}</button>
@@ -96,6 +97,7 @@ export async function renderPreview(box) {
   $('#vt-open') &&
     ($('#vt-open').onclick = () =>
       window.open(`/preview?project=${encodeURIComponent(ws.id)}&version=${encodeURIComponent(v.id)}`, '_blank'));
+  $('#vt-download') && ($('#vt-download').onclick = downloadCurrent);
   $('#vt-reset') &&
     ($('#vt-reset').onclick = async () => {
       if (!confirm('清空这个应用保存的所有数据（恢复到初始示例数据）？')) return;

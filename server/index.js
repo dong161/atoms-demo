@@ -68,20 +68,22 @@ export async function createApp({
   async function auth(req, res, next) {
     const h = req.get('authorization') || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : '';
-    if (!token) return res.status(401).json({ error: '请先创建账号' });
+    if (!token) return res.status(401).json({ error: '请先登录' });
     // 数据库只存令牌的 SHA-256；兼容早期明文存储的账号，命中后顺手升级
-    let user = await db.get('SELECT id, name, created_at FROM users WHERE token = $1', [hashToken(token)]);
+    const cols = 'id, name, created_at, email, google_sub';
+    let user = await db.get(`SELECT ${cols} FROM users WHERE token = $1`, [hashToken(token)]);
     if (!user) {
-      user = await db.get('SELECT id, name, created_at FROM users WHERE token = $1', [token]);
+      user = await db.get(`SELECT ${cols} FROM users WHERE token = $1`, [token]);
       if (user) await db.run('UPDATE users SET token = $1 WHERE id = $2', [hashToken(token), user.id]);
     }
     if (!user)
       user = await db.get(
-        'SELECT u.id, u.name, u.created_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = $1 AND s.expires_at > $2',
+        'SELECT u.id, u.name, u.created_at, u.email, u.google_sub FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = $1 AND s.expires_at > $2',
         [hashToken(token), Date.now()],
       );
-    if (!user) return res.status(401).json({ error: '登录已失效，请重新创建账号或输入恢复码' });
-    req.user = user;
+    if (!user) return res.status(401).json({ error: '登录已失效，请重新登录' });
+    // 不把 google_sub 暴露给前端，只告诉它是否已绑定
+    req.user = { id: user.id, name: user.name, created_at: user.created_at, email: user.email || null, google: !!user.google_sub };
     next();
   }
 
@@ -270,7 +272,77 @@ export async function createApp({
     }),
   );
 
+  // 昵称账号补绑邮箱密码或 Google：绑定后换设备、退出后都能直接登录找回项目，不再只靠恢复码
+  const isGuest = (u) => !u.email && !u.google;
+  app.post(
+    '/api/auth/bind-email',
+    wrap(auth),
+    wrap(async (req, res) => {
+      if (!loginLimit(req.ip)) return tooMany(res, '操作太频繁，请一小时后再试');
+      if (!isGuest(req.user)) return res.status(409).json({ error: '当前账号已绑定登录方式' });
+      const email = String(req.body?.email || '')
+        .trim()
+        .toLowerCase();
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '请输入有效邮箱' });
+      if (password.length < 10 || password.length > 128) return res.status(400).json({ error: '密码需为10–128个字符' });
+      const salt = crypto.randomBytes(16).toString('hex');
+      const digest = await scryptAsync(password, salt, 64);
+      try {
+        const r = await db.run('UPDATE users SET email = $1, password_hash = $2 WHERE id = $3 AND email IS NULL', [
+          email,
+          `scrypt:${salt}:${digest.toString('hex')}`,
+          req.user.id,
+        ]);
+        if (!r.changes) return res.status(409).json({ error: '当前账号已绑定登录方式' });
+      } catch (e) {
+        if (e.code === '23505' || String(e.message).includes('UNIQUE constraint failed'))
+          return res.status(409).json({ error: '此邮箱已被其他账号使用' });
+        throw e;
+      }
+      res.json({ user: { ...req.user, email } });
+    }),
+  );
+  app.post(
+    '/api/auth/bind-google',
+    wrap(auth),
+    wrap(async (req, res) => {
+      if (!loginLimit(req.ip)) return tooMany(res, '操作太频繁，请一小时后再试');
+      if (!googleClientId) return res.status(501).json({ error: '本站未开启 Google 登录' });
+      if (!isGuest(req.user)) return res.status(409).json({ error: '当前账号已绑定登录方式' });
+      // 凭证校验失败不能返回 401：前端会把 401 当作登录失效而退出当前账号
+      const g = await verifyGoogle(req.body?.credential).catch((e) => {
+        throw Object.assign(e, { status: e.status === 401 ? 400 : e.status });
+      });
+      const taken =
+        (await db.get('SELECT id FROM users WHERE google_sub = $1', [g.sub])) ||
+        (g.email ? await db.get('SELECT id FROM users WHERE email = $1', [g.email]) : null);
+      if (taken) return res.status(409).json({ error: '这个 Google 账号已经在本站注册过，请退出后直接用 Google 登录' });
+      await db.run('UPDATE users SET google_sub = $1, email = $2 WHERE id = $3', [g.sub, g.email || null, req.user.id]);
+      res.json({ user: { ...req.user, email: g.email || null, google: true } });
+    }),
+  );
+
   app.get('/api/me', wrap(auth), (req, res) => res.json({ user: req.user }));
+  app.patch(
+    '/api/me',
+    wrap(auth),
+    wrap(async (req, res) => {
+      const name = String(req.body?.name || '').trim();
+      if (!name || name.length > 30) return res.status(400).json({ error: '昵称需为1–30个字符' });
+      await db.run('UPDATE users SET name = $1 WHERE id = $2', [name, req.user.id]);
+      res.json({ user: { ...req.user, name } });
+    }),
+  );
+  // 退出登录：吊销本次会话（邮箱 / Google 登录签发的 7 天会话）
+  app.post(
+    '/api/auth/logout',
+    wrap(async (req, res) => {
+      const h = req.get('authorization') || '';
+      if (h.startsWith('Bearer ')) await db.run('DELETE FROM sessions WHERE token = $1', [hashToken(h.slice(7))]);
+      res.json({ ok: true });
+    }),
+  );
 
   // ---------- 项目 ----------
   app.get(

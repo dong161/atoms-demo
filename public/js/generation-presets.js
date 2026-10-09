@@ -5,7 +5,8 @@ export const THEMES = [
   { id: 'notion', name: '极简黑白', primary: '#292929', bg: '#ffffff', text: '#202020', radius: '6px', font: 'system-ui, sans-serif' },
   { id: 'ocean', name: '清透蓝色', primary: '#2463eb', bg: '#f0f7ff', text: '#18314d', radius: '12px', font: 'system-ui, sans-serif' },
 ];
-export const FILE_LIMITS = { count: 3, chars: 8000, totalChars: 16000, bytes: 32000, totalBytes: 64000 };
+// 附件会随每一路模型请求发送；按最小上下文的候选模型（约 128K tokens）留出当前代码和输出的空间
+export const FILE_LIMITS = { count: 3, chars: 30000, totalChars: 60000, bytes: 100_000, totalBytes: 200_000 };
 export function validateAttachments(files) {
   if (!Array.isArray(files) || files.length > FILE_LIMITS.count) throw new Error('最多添加3个文本附件');
   let chars = 0,
@@ -14,14 +15,14 @@ export function validateAttachments(files) {
     if (!file || typeof file.name !== 'string' || typeof file.text !== 'string') throw new Error('附件格式不正确');
     const name = file.name.trim();
     const text = file.text;
-    if (!name || name.length > 128 || !/\.(txt|md|json)$/i.test(name) || /[\x00-\x1f]/.test(name))
-      throw new Error('仅支持文件名有效的TXT、Markdown、JSON文本');
+    if (!name || name.length > 128 || !/\.(txt|md|json|csv)$/i.test(name) || /[\x00-\x1f]/.test(name))
+      throw new Error('仅支持 TXT、Markdown、JSON、CSV 文本文件');
     const size = new TextEncoder().encode(text).length;
     chars += text.length;
     bytes += size;
     if (!text.trim() || /[\x00-\x08\x0b\x0c\x0e-\x1f\ufffd]/.test(text)) throw new Error('附件为空或不是有效UTF-8文本');
     if (text.length > FILE_LIMITS.chars || size > FILE_LIMITS.bytes || chars > FILE_LIMITS.totalChars || bytes > FILE_LIMITS.totalBytes)
-      throw new Error('单附件最多8000字符/32KB，合计最多16000字符/64KB');
+      throw new Error('单个附件最多 3 万字符（约 100KB），合计最多 6 万字符（约 200KB）');
     return { name, text };
   });
 }

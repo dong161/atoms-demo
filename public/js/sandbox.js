@@ -28,6 +28,28 @@ export async function buildSrcdoc(html, { data = {}, mode = 'live', channel }) {
   return `<!DOCTYPE html><html><head>${boot}</head><body>${html}</body></html>`;
 }
 
+/**
+ * 导出为独立 HTML 文件：可直接双击在浏览器里运行。
+ * 若应用已有数据，注入一段只在首次打开时执行的脚本，把当前数据写入文件自己的 localStorage；之后的修改照常保存在本地。
+ */
+export function exportHtml(html, data = {}) {
+  if (!Object.keys(data).length) return html;
+  const seed = `<script>(function(){try{if(localStorage.getItem('__atoms_export_seeded'))return;var d=${safeJson(data)};for(var k in d)localStorage.setItem(k,d[k]);localStorage.setItem('__atoms_export_seeded','1')}catch(e){}})();</script>`;
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}\n${seed}`);
+  return seed + html;
+}
+
+export function saveHtmlFile(name, html) {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${String(name).replace(/[\\/:*?"<>|]/g, '_')}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 const newChannel = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 /**

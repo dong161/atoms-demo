@@ -1,4 +1,5 @@
 // 工作区：加载项目、对话、输入框、任务事件流
+import { bindUserMenu, userMenu } from './auth.js';
 import { downloadCurrent, publish, renameProject, renderDrawer } from './actions.js';
 import { bindComposerOptions, optionsMarkup, readComposerOptions } from './composer-options.js';
 import { $, AGENTS, ICONS, api, avatar, esc, fmtChars, fmtTime, modelLabel, raceModels, state, store, toast } from './core.js';
@@ -118,6 +119,7 @@ export function renderWorkspace() {
         <button class="btn sm" id="ws-history">${ICONS.history}<span class="wide">版本历史</span></button>
         <button class="btn sm wide" id="ws-download" ${cur ? '' : 'disabled'}>${ICONS.download}下载</button>
         <button class="btn sm primary" id="ws-publish" ${cur && !running ? '' : 'disabled'}>${publishLabel}</button>
+        ${state.user ? userMenu() : ''}
       </div>
     </div>
     <div class="ws-tabs"><button data-tab="chat" class="${ws.tab === 'chat' ? 'on' : ''}">对话</button><button data-tab="preview" class="${ws.tab === 'preview' ? 'on' : ''}">预览</button></div>
@@ -131,6 +133,7 @@ export function renderWorkspace() {
   </div>
   ${ws.drawer ? '<div id="drawer-slot"></div>' : ''}`;
   $('#ws-back').onclick = () => (location.hash = '#/');
+  bindUserMenu(app);
   $('#ws-title').onclick = renameProject;
   $('#ws-history').onclick = () => {
     ws.drawer = !ws.drawer;

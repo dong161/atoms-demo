@@ -15,14 +15,21 @@
     </style>
   </head>
   <body>
-    <div class="share-bar"><span id="bar-title">加载中…</span><a href="/" target="_blank" rel="noopener">◎ 用 Atoms Demo 做一个</a></div>
+    <div class="share-bar">
+      <span id="bar-title">加载中…</span>
+      <span class="share-actions">
+        <a id="bar-edit" href="/" hidden>← 返回编辑</a>
+        <button class="btn sm" id="bar-download" hidden title="导出为可独立运行的 HTML 文件">⤓ 导出 HTML</button>
+        <a href="/" target="_blank" rel="noopener" id="bar-make">◎ 用 Atoms Demo 做一个</a>
+      </span>
+    </div>
     <div class="share-main">
       <div class="frame-wrap" id="frame">
         <div class="placeholder"><span class="spinner"></span></div>
       </div>
     </div>
     <script type="module">
-      import { mountPreview } from '/js/sandbox.js';
+      import { exportHtml, mountPreview, saveHtmlFile } from '/js/sandbox.js';
       const frame = document.getElementById('frame');
       const fail = (msg) => {
         frame.innerHTML = `<div class="placeholder"><div class="big">🔗</div><h3>打不开这个应用</h3><p>${msg}</p></div>`;
@@ -72,6 +79,10 @@
           const d = await json(`/api/versions/${encodeURIComponent(q.get('version'))}/html`, { headers: auth });
           html = d.html;
           title = `${d.title} · Version ${d.seq}`;
+          const edit = document.getElementById('bar-edit');
+          edit.href = `/#/p/${encodeURIComponent(d.projectId)}`;
+          edit.hidden = false;
+          document.getElementById('bar-make').hidden = true;
           // 数据归属以服务端返回的版本所属项目为准，忽略 URL 里的 project 参数，防止版本与数据错配
           const base = `/api/projects/${encodeURIComponent(d.projectId)}/kv`;
           kv = {
@@ -83,6 +94,13 @@
         document.title = title;
         document.getElementById('bar-title').textContent = title;
         await mountPreview(frame, html, { kv });
+        const dl = document.getElementById('bar-download');
+        dl.hidden = false;
+        dl.onclick = async () => {
+          // 导出时带上当前看到的数据：所有者是项目数据，分享页访客是自己的那份
+          const data = await kv.load().catch(() => ({}));
+          saveHtmlFile(title.replace(/\s*·\s*/g, '-'), exportHtml(html, data || {}));
+        };
       }
       main().catch((e) => fail(e.message));
     </script>

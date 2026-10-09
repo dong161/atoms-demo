@@ -18,9 +18,9 @@ test('文本附件数量、类型、字符、字节和二进制限制', () => {
     [{ name: 'x.png', text: 'x' }],
     [{ name: 'x.txt', text: '\0bad' }],
     [{ name: 'x.md', text: '' }],
-    [{ name: 'x.md', text: 'a'.repeat(8001) }],
+    [{ name: 'x.md', text: 'a'.repeat(30_001) }],
     Array.from({ length: 4 }, () => ({ name: 'x.txt', text: 'x' })),
-    Array.from({ length: 3 }, () => ({ name: 'x.txt', text: 'a'.repeat(6000) })),
+    Array.from({ length: 3 }, () => ({ name: 'x.txt', text: 'a'.repeat(25_000) })),
   ])
     assert.throws(
       () => generationOptions({ attachments }),
