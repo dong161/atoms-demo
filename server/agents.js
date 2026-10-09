@@ -208,6 +208,26 @@ export function reviewChecklist({ mode, plan, instruction }) {
   return mode === 'edit' ? [`本次修改：${instruction}`, ...base].slice(0, 8) : base.slice(0, 8);
 }
 
+/**
+ * 验收用的代码视图：功能都在标记和脚本里，样式表、SVG 路径数据、注释和多余空白对判断「做没做」没有帮助。
+ * 先去掉它们；仍然超长时完整保留全部脚本、截短标记部分——早期直接截取前 6 万字，
+ * 8 万字的完整应用会把末尾的脚本整段截掉，Mike 因此把所有需求判为未实现（线上真实发生过）。
+ */
+export function compactForReview(html, limit = 110_000) {
+  let s = String(html)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/(<style[^>]*>)[\s\S]*?(<\/style>)/gi, '$1/* 样式已省略 */$2')
+    .replace(/\s(d|points|viewBox)="[^"]{40,}"/g, ' $1="…"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n');
+  if (s.length <= limit) return s;
+  const scripts = s.match(/<script[\s\S]*?<\/script>/gi) || [];
+  const markup = s.replace(/<script[\s\S]*?<\/script>/gi, '<script>/* 见下方 */</script>');
+  const scriptText = scripts.join('\n');
+  const room = Math.max(20_000, limit - scriptText.length);
+  return `${markup.slice(0, room)}\n<!-- 标记部分过长已截断 -->\n${scriptText}`.slice(0, limit + 40_000);
+}
+
 export async function reviewBuild({ cfg, html, checklist, signal }) {
   if (!checklist.length) return null;
   if (cfg.mockOnly) {
@@ -229,7 +249,7 @@ export async function reviewBuild({ cfg, html, checklist, signal }) {
           { role: 'system', content: REVIEW_SYSTEM },
           {
             role: 'user',
-            content: `需求清单：\n${checklist.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n代码：\n${html.slice(0, 60000)}`,
+            content: `需求清单：\n${checklist.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n代码：\n${compactForReview(html)}`,
           },
         ],
       });

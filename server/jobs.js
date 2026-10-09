@@ -10,7 +10,12 @@ export const newId = () => crypto.randomUUID();
 export const LAGGING = 'lagging';
 // 领先一路完成后其余路最多再等这么久：质量高的模型往往更慢，等待太短会让它们总被淘汰
 export let LAGGING_GRACE_MS = Number(process.env.RACE_GRACE_MS) || 150_000;
-export const setLaggingGrace = (ms) => (LAGGING_GRACE_MS = ms); // 测试用
+// 整轮至少给这么久：质量好的模型生成完整应用常要 3~4 分钟，不能因为某个快模型 1 分钟就做完而被提前淘汰
+export let RACE_MIN_MS = Number(process.env.RACE_MIN_MS) || 300_000;
+export const setLaggingGrace = (ms, minMs = RACE_MIN_MS) => {
+  LAGGING_GRACE_MS = ms;
+  RACE_MIN_MS = minMs;
+}; // 测试用
 const now = () => Date.now();
 
 export class JobHub {
@@ -377,6 +382,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
 
     const lineup = models.length ? models : ['mock'];
     const raceId = newId();
+    const raceStarted = now();
     await db.run('INSERT INTO races (id, project_id, instruction, base_version_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [
       raceId,
       project.id,
@@ -409,37 +415,59 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
     });
     await say('mike', 'race', handoff, { raceId, mode, entries: entries.map((e) => ({ id: e.id, model: e.model })) });
 
-    // 赛马限时：领先的一路完成后，其余路最多再等 LAGGING_GRACE_MS，超时自动淘汰，避免整轮被最慢的一路拖住
+    // 赛马限时：领先的一路完成后，其余路最多再等 LAGGING_GRACE_MS（且整轮至少 RACE_MIN_MS），超时自动淘汰，避免整轮被最慢的一路拖住
     const laneCtrls = entries.map(() => new AbortController());
     const pendingLanes = entries.map(() => true);
     const onJobAbort = () => laneCtrls.forEach((c) => c.abort());
     signal.addEventListener('abort', onJobAbort, { once: true });
     let graceTimer = null;
+    // 某一路报错失败（不是被淘汰或用户停止）时，用备用模型把这一路重做一次；每路最多换一次，同一轮不重复用同一个模型
+    const usedModels = new Set(lineup);
+    const runLane = async (e, i) => {
+      const args = {
+        db,
+        cfg,
+        emit,
+        flow,
+        lane: entries.length > 1 ? i + 1 : 0,
+        signal: laneCtrls[i].signal,
+        variant: i,
+        mode,
+        plan,
+        prompt,
+        baseHtml,
+        instruction: modelInstruction,
+        reviewInstruction: instruction,
+        themeId,
+      };
+      let r = await buildEntry({ ...args, entry: e });
+      if (r.ok || laneCtrls[i].signal.aborted || signal.aborted) return r;
+      const fb = (cfg.fallbacks || []).find((m) => !usedModels.has(m));
+      if (!fb) return r;
+      usedModels.add(fb);
+      await db.run("UPDATE race_entries SET model = $1, status = 'running', error = NULL, duration_ms = NULL WHERE id = $2", [fb, e.id]);
+      flow.add({
+        agent: 'mike',
+        action: 'assign',
+        label: `${e.model} 没有完成，换 ${fb} 重做这一路`,
+        detail: String(r.error || '').slice(0, 80),
+      });
+      emit('entry-model', { raceId, entryId: e.id, model: fb, from: e.model });
+      r = await buildEntry({ ...args, entry: { ...e, model: fb } });
+      return r;
+    };
     const results = await Promise.all(
       entries.map((e, i) =>
-        buildEntry({
-          db,
-          cfg,
-          emit,
-          flow,
-          lane: entries.length > 1 ? i + 1 : 0,
-          signal: laneCtrls[i].signal,
-          entry: e,
-          variant: i,
-          mode,
-          plan,
-          prompt,
-          baseHtml,
-          instruction: modelInstruction,
-          reviewInstruction: instruction,
-          themeId,
-        }).then((r) => {
+        runLane(e, i).then((r) => {
           if (r.ok && entries.length > 1 && !graceTimer) {
-            graceTimer = setTimeout(() => {
-              laneCtrls.forEach((c) => c.abort(LAGGING));
-              if (laneCtrls.some((c, j) => pendingLanes[j]))
-                emit('status', { agent: 'mike', text: '领先候选已完成，落后太多的模型已自动淘汰' });
-            }, LAGGING_GRACE_MS);
+            graceTimer = setTimeout(
+              () => {
+                laneCtrls.forEach((c) => c.abort(LAGGING));
+                if (laneCtrls.some((c, j) => pendingLanes[j]))
+                  emit('status', { agent: 'mike', text: '领先候选已完成，落后太多的模型已自动淘汰' });
+              },
+              Math.max(LAGGING_GRACE_MS, RACE_MIN_MS - (now() - raceStarted)),
+            );
           }
           pendingLanes[i] = false;
           return r;
@@ -626,7 +654,10 @@ async function buildEntry({
   } catch (e) {
     // 用户主动停止不算模型的问题；被淘汰或出错都计入健康度
     if (!(signal.aborted && signal.reason !== LAGGING)) cfg.health?.record(entry.model, { ok: false, ms: now() - started });
-    if (signal.reason === LAGGING) e = new Error(`领先候选完成 ${Math.round(LAGGING_GRACE_MS / 1000)} 秒后仍未完成，已自动淘汰`);
+    if (signal.reason === LAGGING)
+      e = new Error(
+        `领先候选完成后又等了 ${Math.round(LAGGING_GRACE_MS / 1000)} 秒（整轮至少 ${Math.round(RACE_MIN_MS / 60000)} 分钟）仍未完成，已自动淘汰`,
+      );
     await db.run('UPDATE race_entries SET status = $1, error = $2, duration_ms = $3 WHERE id = $4', [
       'failed',
       e.message,

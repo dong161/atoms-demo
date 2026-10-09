@@ -25,7 +25,9 @@ export function renderRace(box) {
   const sub = !allDone
     ? `${race.entries.length} 路${multi ? '模型并行' : ''}生成中，代码实时流式输出`
     : best
-      ? `推荐采用 <b>${esc(modelLabel(race.entries.find((e) => e.id === best).model))}</b>（${scores[best].score} 分）。也可以先全屏试用再决定。`
+      ? race.adopted_entry_id
+        ? `已采用 <b>${esc(modelLabel(race.entries.find((e) => e.id === race.adopted_entry_id)?.model || ''))}</b> 为当前版本${race.adopted_entry_id === best ? '（最高分）' : ''}。想换可以点其它候选的「采用此版本」；要细改某一处，到版本预览里用「选择元素」。 <button class="btn sm" data-goto-current>预览并修改当前版本</button>`
+        : `推荐采用 <b>${esc(modelLabel(race.entries.find((e) => e.id === best).model))}</b>（${scores[best].score} 分），打分完成后会自动采用。`
       : ws.scoring.size
         ? '正在沙箱里自动校验：模拟点击、填写、检测报错与移动端适配…'
         : race.status === 'failed'
@@ -39,6 +41,13 @@ export function renderRace(box) {
   box.querySelectorAll('[data-try]').forEach((b) => (b.onclick = () => setView({ type: 'entry', id: b.dataset.try })));
   box.querySelectorAll('[data-adopt]').forEach((b) => (b.onclick = () => adopt(b.dataset.adopt)));
   box.querySelectorAll('[data-goto-version]').forEach((b) => (b.onclick = () => setView({ type: 'version', id: b.dataset.gotoVersion })));
+  box
+    .querySelectorAll('[data-goto-current]')
+    .forEach(
+      (b) =>
+        (b.onclick = () =>
+          state.ws.data.project.current_version_id && setView({ type: 'version', id: state.ws.data.project.current_version_id })),
+    );
   $('#rescore') &&
     ($('#rescore').onclick = () => {
       for (const e of done) delete scores[e.id];

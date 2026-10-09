@@ -582,6 +582,16 @@ export function handleEvent(ev) {
       if (ws.view?.type === 'race') renderViewer(true);
       break;
     }
+    case 'entry-model': {
+      // 这一路原模型失败，换成备用模型重做
+      const hit = findEntry(ev.entryId);
+      if (hit) Object.assign(hit.entry, { model: ev.model, status: 'running', error: null, duration_ms: null });
+      delete ws.progress[ev.entryId];
+      toast(`${ev.from} 没有完成，已换 ${ev.model} 重做这一路`);
+      if (ws.view?.type === 'race') renderViewer(true);
+      renderChat();
+      break;
+    }
     case 'progress': {
       ws.progress[ev.entryId] = ev;
       const hit = findEntry(ev.entryId);

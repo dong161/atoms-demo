@@ -65,7 +65,7 @@ export async function renderPreview(box) {
       ${
         v.type === 'version' && v.id === d.project.current_version_id
           ? `<button class="btn sm ghost" id="vt-fix" hidden>${ICONS.wrench}<span>修复报错</span></button>
-      <button class="icon-btn${ws.picking ? ' on' : ''}" id="vt-pick" title="选择元素后，用对话只修改它">${ICONS.pick}</button>`
+      <button class="btn sm ghost${ws.picking ? ' on' : ''}" id="vt-pick" title="在预览里点一个元素，再用对话只修改它">${ICONS.pick}<span class="wide">选择元素</span></button>`
           : ''
       }
       ${

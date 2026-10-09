@@ -108,6 +108,8 @@ export async function createApp({
       const list = parseModelList(JSON.parse(savedModels.v));
       if (list.length) cfg.models = list;
     }
+    const savedFallbacks = await db.get("SELECT v FROM settings WHERE k = 'llm_fallbacks'");
+    if (savedFallbacks) cfg.fallbacks = parseModelList(JSON.parse(savedFallbacks.v));
   }
   app.post(
     '/api/admin/llm-endpoint',
@@ -136,7 +138,17 @@ export async function createApp({
         cfg.models = models;
         if (!models.includes(cfg.plannerModel)) cfg.plannerModel = models[0];
       }
-      res.json({ ok: true, models: cfg.models });
+      // 备用模型：某一路失败时用来重做这一路（不进默认阵容）
+      if (Array.isArray(req.body?.fallbacks)) {
+        const fallbacks = parseModelList(req.body.fallbacks).filter((m) => !cfg.models.includes(m));
+        await db.run(
+          `INSERT INTO settings (k, v, updated_at) VALUES ('llm_fallbacks', $1, $2)
+         ON CONFLICT (k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
+          [JSON.stringify(fallbacks), Date.now()],
+        );
+        cfg.fallbacks = fallbacks;
+      }
+      res.json({ ok: true, models: cfg.models, fallbacks: cfg.fallbacks || [] });
     }),
   );
 

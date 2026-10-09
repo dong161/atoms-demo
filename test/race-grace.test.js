@@ -33,7 +33,7 @@ async function fakeModels() {
 test('赛马限时：领先候选完成后，过慢的一路被自动淘汰，领先者自动采用', async () => {
   const { server, baseUrl } = await fakeModels();
   const db = await openDb({ databaseUrl: '', sqlitePath: ':memory:' });
-  setLaggingGrace(500);
+  setLaggingGrace(500, 0);
   try {
     const hub = new JobHub();
     const t = Date.now();
@@ -59,7 +59,7 @@ test('赛马限时：领先候选完成后，过慢的一路被自动淘汰，�
     const versions = await db.all('SELECT seq, model FROM versions WHERE project_id = $1', [project.id]);
     assert.deepEqual(versions, [{ seq: 1, model: 'fast' }]);
   } finally {
-    setLaggingGrace(90_000);
+    setLaggingGrace(150_000, 300_000);
     server.closeAllConnections?.();
     server.close();
     await db.close();

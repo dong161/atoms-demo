@@ -38,11 +38,15 @@ function pickLineup(alive) {
   const main = FAMILIES.map((fam) => fam.find((m) => alive.includes(m))).filter(Boolean);
   const rest = alive.filter((m) => !main.includes(m));
   const fill = FILL_ORDER.flatMap((re) => rest.filter((m) => re.test(m))).filter((m, i, a) => a.indexOf(m) === i);
-  return [...main, ...fill.slice(0, Math.max(0, 3 - main.length))];
+  const lineup = [...main, ...fill.slice(0, Math.max(0, 3 - main.length))];
+  // 其余可用模型作为备用：某一路失败时线上用它们重做（Gemini 子模型优先）
+  liveFallbacks = fill.filter((m) => !lineup.includes(m));
+  return lineup;
 }
 
 // 逐个用一句极短的请求试模型（并行，45 秒内没有正常回复算不可用）；全部失败时退回完整清单，避免线上无模型可选
 let liveModels = models;
+let liveFallbacks = [];
 async function probeModels() {
   const results = await Promise.all(
     models.map(async (model) => {
@@ -72,7 +76,7 @@ async function report(base) {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ baseUrl: `${base}/v1`, models: liveModels }), // 只上报当前可用的模型
+      body: JSON.stringify({ baseUrl: `${base}/v1`, models: liveModels, fallbacks: liveFallbacks }), // 只上报当前可用的模型
     },
     90000,
   );
@@ -122,8 +126,9 @@ async function runOnce() {
   // 模型巡检：每 10 分钟重新试一遍，可用清单有变化就重新上报
   const modelTimer = setInterval(async () => {
     if (!registered || !base) return;
+    const prevFallbacks = liveFallbacks.join(','); // probeModels 会更新 liveFallbacks，先记下旧值
     const next = await probeModels();
-    if (next.join(',') === liveModels.join(',')) return;
+    if (next.join(',') === liveModels.join(',') && liveFallbacks.join(',') === prevFallbacks) return;
     liveModels = next;
     if (await report(base)) log('re-reported models', liveModels.join(', '));
   }, 10 * 60_000);
