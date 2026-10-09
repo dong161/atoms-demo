@@ -109,8 +109,12 @@ export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
         remove();
         await render();
         toast(`欢迎${mode === 'login' || mode === 'restore' ? '回来' : ''}，${r.user.name}`);
-        if (mode === 'guest' || mode === 'register') showFirstRun({ afterDone: afterLogin });
-        else afterLogin?.();
+        // 已经写好需求再登录的用户，直接提交需求，不再插入新手引导；空手注册的新用户才展示三步引导
+        if ((mode === 'guest' || mode === 'register') && !afterLogin) showFirstRun();
+        else {
+          if (afterLogin) store.set(`atoms.onboarded.${r.user.id}`, true);
+          afterLogin?.();
+        }
       } catch (err) {
         state.token = oldToken;
         $('#auth-error', mask).textContent = err.status === 401 ? '邮箱、密码或恢复码不正确' : err.message;
