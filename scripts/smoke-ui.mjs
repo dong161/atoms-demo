@@ -34,49 +34,75 @@ async function api(page, path, opts = {}) {
     { path, opts, t },
   );
 }
-// 在生成的应用里新增一条记录：优先在弹出的对话框 / 表单里填写，所有文本框都写入带标记的文字，
-// 避免把标记填进顶栏搜索框之类的无关输入框
+// 在生成的应用里新增一条记录：只填写「真正在最上层、用户点得到」的输入框（用 elementFromPoint 判断），
+// 避免填进被弹窗盖住的搜索框，或藏在屏幕外 / 透明的侧栏、确认框里
 const SAVE_RE = /^\s*(保存|添加|确定|提交|创建|完成)/;
 async function addRecord(app, page, mark) {
   const opener = app.locator('button:visible', { hasText: /新建|添加|新增|\+/ }).first();
   if (await opener.count()) await opener.click({ timeout: 3000 }).catch(() => {});
-  await page.waitForTimeout(800);
-  // 只认里面有可见输入框的弹窗：有些应用用透明度隐藏「删除确认」之类的弹窗，Playwright 仍视为可见
-  const TEXT = 'input[type=text]:visible, input:not([type]):visible, textarea:visible';
-  const dialog = app
-    .locator('[role=dialog], dialog[open], .modal, .drawer, [class*=modal], [class*=dialog]')
-    .filter({ has: app.locator(TEXT) })
-    .last();
-  const scope = (await dialog.count())
-    ? dialog
-    : app
-        .locator('form:visible')
-        .filter({ has: app.locator(TEXT) })
-        .first()
-        .or(app.locator('body'));
-  const inputs = scope.locator(TEXT);
-  const n = await inputs.count();
-  for (let i = 0; i < n; i++)
-    await inputs
+  await page.waitForTimeout(1500); // 等弹窗的打开动画结束
+  const found = await app
+    .locator('body')
+    .evaluate((body, saveSrc) => {
+      const doc = body.ownerDocument;
+      const win = doc.defaultView;
+      doc.querySelectorAll('[data-smoke]').forEach((e) => e.removeAttribute('data-smoke'));
+      const onTop = (el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return false;
+        const x = r.left + r.width / 2,
+          y = r.top + r.height / 2;
+        if (x < 0 || y < 0 || x > win.innerWidth || y > win.innerHeight) return false;
+        const top = doc.elementFromPoint(x, y);
+        return !!top && (top === el || el.contains(top) || top.contains(el) || top.closest('label') === el.closest('label'));
+      };
+      const fields = [...doc.querySelectorAll('input[type=text], input:not([type]), textarea, input[type=date]')].filter(onTop);
+      if (!fields.length) return 0;
+      // 按所在容器（表单 / 固定定位的弹层，都没有就是整页）分组，取字段最多的一组：
+      // 新建弹窗一般有标题、描述、日期等多个字段，顶栏搜索框只有一个
+      const containerOf = (f) => {
+        let c = f.closest('form');
+        for (let a = f; !c && a && a !== doc.body; a = a.parentElement) if (win.getComputedStyle(a).position === 'fixed') c = a;
+        return c || doc.body;
+      };
+      const groups = new Map();
+      for (const f of fields) groups.set(containerOf(f), (groups.get(containerOf(f)) || 0) + 1);
+      let box = doc.body;
+      let best = -1;
+      for (const [c, n] of groups) if (n >= best) [box, best] = [c, n];
+      const used = fields.filter((f) => box.contains(f));
+      used.forEach((f) => f.setAttribute('data-smoke', f.type === 'date' ? 'date' : 'text'));
+      const save = new RegExp(saveSrc);
+      // 提交按钮优先级：显式 type=submit → 文字是保存/添加/创建… → 表单里不叫取消/关闭的按钮
+      const label = (b) => (b.textContent || b.value || '').trim();
+      const cands = [...box.querySelectorAll('button, input[type=submit]')].filter(onTop);
+      const btn =
+        cands.find((b) => b.getAttribute('type') === 'submit' && box !== doc.body) ||
+        cands.find((b) => save.test(label(b))) ||
+        cands.find((b) => b.form && b.getAttribute('type') !== 'button' && !/取消|关闭|cancel|close/i.test(label(b)));
+      if (btn) btn.setAttribute('data-smoke', 'submit');
+      return used.length;
+    }, SAVE_RE.source)
+    .catch(() => 0);
+  const texts = app.locator('[data-smoke=text]');
+  for (let i = 0; i < (await texts.count()); i++)
+    await texts
       .nth(i)
       .fill(i === 0 ? mark : `${mark}-${i}`, { timeout: 3000 })
       .catch(() => {});
-  const dates = scope.locator('input[type=date]:visible');
+  const dates = app.locator('[data-smoke=date]');
   for (let i = 0; i < (await dates.count()); i++)
     await dates
       .nth(i)
       .fill('2026-10-20', { timeout: 3000 })
       .catch(() => {});
-  const submit = scope.locator('button[type=submit]:visible, form button:not([type]):visible').first();
-  if (await submit.count()) await submit.click({ timeout: 3000 }).catch(() => {});
-  else if (await scope.locator('button:visible', { hasText: SAVE_RE }).count())
-    await scope
-      .locator('button:visible', { hasText: SAVE_RE })
-      .last()
+  if (await app.locator('[data-smoke=submit]').count())
+    await app
+      .locator('[data-smoke=submit]')
       .click({ timeout: 3000 })
       .catch(() => {});
-  else if (n)
-    await inputs
+  else if (found)
+    await texts
       .first()
       .press('Enter')
       .catch(() => {});
