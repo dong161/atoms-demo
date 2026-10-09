@@ -272,10 +272,9 @@ export function renderComposer() {
     }
   };
   const slot = $('#chat-race');
-  slot.innerHTML = optionsMarkup(options) + `<div class="race-settings hidden" data-advanced-race>${raceControls()}</div>`;
+  slot.innerHTML = optionsMarkup(options, raceControls());
   bindComposerOptions(slot, options, {
     onChange: () => renderComposer(),
-    onRace: () => slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),
     notify: toast,
   });
   bindRaceControls(slot, renderComposer);

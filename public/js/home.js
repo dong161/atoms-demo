@@ -10,15 +10,11 @@ export function topbar() {
   return `<header class="topbar landing-nav"><a class="logo" href="#/"><span class="logo-mark">◎</span>Atoms <small>DEMO</small></a><nav aria-label="首页导航"><a href="#how-it-works" data-scroll="how-it-works">如何工作</a><a href="#inspiration" data-scroll="inspiration">设计灵感</a><a href="#team" data-scroll="team">AI 团队</a></nav><div class="nav-actions">${state.user ? `<button class="btn ghost" id="guide-btn">使用引导</button><button class="btn ghost user-chip" id="account-btn">${userAvatar(state.user.name)}<span>${esc(state.user.name)}</span></button>` : '<button class="btn ghost sm" id="login-btn">登录</button><button class="btn primary sm" id="signup-btn">免费开始 ↗</button>'}</div></header>`;
 }
 
-export function raceControls(compact = false) {
+export function raceControls() {
   const on = state.race.on;
-  const chosen = raceModels();
-  const chips =
-    !state.config.mockOnly && on
-      ? `<div class="model-chips">${state.config.models.map((m) => `<button type="button" class="model-chip${chosen.includes(m) ? ' on' : ''}" data-model="${esc(m)}">${esc(m)}</button>`).join('')}</div>`
-      : '';
-  return `<button type="button" class="race-toggle${on ? ' on' : ''}" data-race-toggle title="同一需求交给多个模型同时生成，自动校验打分后择优采用">
-      <span class="switch"></span>${ICONS.race} 赛马模式${on ? ` · ${chosen.length} 路` : ''}</button>${compact ? '' : chips}`;
+  const n = raceModels().length;
+  return `<button type="button" class="race-toggle${on ? ' on' : ''}" data-race-toggle aria-pressed="${on}" title="开启后，系统自动挑选当前最稳定的 ${n} 个模型同时生成，自动校验打分后择优采用">
+      <span class="switch"></span>${ICONS.race} 赛马${on ? ` · ${n} 路` : ''}</button>`;
 }
 
 export function bindRaceControls(root, rerender) {
@@ -26,20 +22,7 @@ export function bindRaceControls(root, rerender) {
     (b) =>
       (b.onclick = () => {
         state.race.on = !state.race.on;
-        store.set('atoms.race', state.race);
-        rerender();
-      }),
-  );
-  root.querySelectorAll('[data-model]').forEach(
-    (b) =>
-      (b.onclick = () => {
-        const cur = raceModels();
-        const m = b.dataset.model;
-        let next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m];
-        if (next.length === 0) return toast('至少保留一个模型', true);
-        if (next.length > state.config.maxModels) return toast(`最多同时 ${state.config.maxModels} 路`, true);
-        state.race.models = next;
-        store.set('atoms.race', state.race);
+        store.set('atoms.race', { on: state.race.on });
         rerender();
       }),
   );
@@ -97,19 +80,17 @@ export async function renderHome() {
         ta.focus();
       }),
   );
-  const drawOptions = (raceOpen = false) => {
+  const drawOptions = () => {
     const slot = $('#race-slot');
-    slot.innerHTML =
-      optionsMarkup(options) + `<div class="race-settings ${raceOpen ? '' : 'hidden'}" data-advanced-race>${raceControls()}</div>`;
+    slot.innerHTML = optionsMarkup(options, raceControls());
     bindComposerOptions(slot, options, {
       onChange: () => {
         saveComposerOptions(options);
         drawOptions();
       },
-      onRace: () => slot.querySelector('[data-advanced-race]').classList.toggle('hidden'),
       notify: toast,
     });
-    bindRaceControls(slot, () => drawOptions(true));
+    bindRaceControls(slot, () => drawOptions());
   };
   drawOptions();
   $('#account-btn') && ($('#account-btn').onclick = showAccount);

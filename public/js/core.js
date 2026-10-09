@@ -143,10 +143,8 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
+// 赛马阵容由服务端按模型健康度自动挑选（最近成功率高、速度快的优先），界面只提供开关
 export function raceModels() {
-  const avail = state.config.models;
-  let list = (state.race.models || state.config.defaultRace).filter((m) => avail.includes(m));
-  if (state.config.mockOnly) list = state.config.defaultRace;
-  if (!list.length) list = state.config.defaultRace;
-  return state.race.on ? list.slice(0, state.config.maxModels) : [list[0] || avail[0]];
+  const list = state.config.defaultRace?.length ? state.config.defaultRace : state.config.models;
+  return state.race.on ? list.slice(0, state.config.maxModels) : [list[0]];
 }

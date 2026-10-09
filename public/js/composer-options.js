@@ -19,11 +19,12 @@ export function saveComposerOptions(options) {
     /* 仍可本次使用 */
   }
 }
-export function optionsMarkup(options) {
+/** extra：追加在「＋ / 主题」同一行末尾的控件（例如赛马开关） */
+export function optionsMarkup(options, extra = '') {
   const theme = THEMES.find((t) => t.id === options.themeId) || THEMES[0];
-  return `<div class="generation-options"><div class="option-anchor"><button type="button" class="option-btn" data-options-plus aria-label="更多生成选项" aria-expanded="false">＋</button><div class="options-popover hidden" data-options-menu><b>更多生成选项</b><button type="button" data-add-file>↗ 添加文本附件</button><button type="button" data-race-open>⚑ 赛马与模型设置</button><small>TXT / Markdown / JSON · 最多3个<br>附件会传给模型，请勿包含密码或密钥。</small></div></div><div class="option-anchor"><button type="button" class="option-btn" data-theme-open aria-expanded="false">◉ ${escape(theme.name)}⌄</button><div class="options-popover theme-popover hidden" data-theme-menu><label>选择生成应用的主题<input type="search" class="field" data-theme-search placeholder="搜索主题" aria-label="搜索主题"></label><div data-theme-list>${THEMES.map((t) => `<button type="button" data-theme="${t.id}" aria-pressed="${options.themeId === t.id}"><span>${t.name}</span><span class="theme-dots"><i style="background:${t.primary}"></i><i style="background:${t.bg}"></i><i style="background:${t.text}"></i></span></button>`).join('')}</div><small>应用于下次生成或修改，不会清空数据。</small></div></div><input type="file" accept=".txt,.md,.json,text/plain,text/markdown,application/json" multiple data-file-input hidden></div><div class="file-chips">${options.attachments.map((f, i) => `<span>${escape(f.name)} <small>${f.text.length}字</small><button type="button" data-remove-file="${i}" aria-label="移除附件 ${escape(f.name)}">×</button></span>`).join('')}</div>`;
+  return `<div class="generation-options"><div class="option-anchor"><button type="button" class="option-btn" data-options-plus aria-label="更多生成选项" aria-expanded="false">＋</button><div class="options-popover hidden" data-options-menu><b>更多生成选项</b><button type="button" data-add-file>↗ 添加文本附件</button><small>TXT / Markdown / JSON · 最多3个<br>附件会传给模型，请勿包含密码或密钥。</small></div></div><div class="option-anchor"><button type="button" class="option-btn" data-theme-open aria-expanded="false">◉ ${escape(theme.name)}⌄</button><div class="options-popover theme-popover hidden" data-theme-menu><label>选择生成应用的主题<input type="search" class="field" data-theme-search placeholder="搜索主题" aria-label="搜索主题"></label><div data-theme-list>${THEMES.map((t) => `<button type="button" data-theme="${t.id}" aria-pressed="${options.themeId === t.id}"><span>${t.name}</span><span class="theme-dots"><i style="background:${t.primary}"></i><i style="background:${t.bg}"></i><i style="background:${t.text}"></i></span></button>`).join('')}</div><small>应用于下次生成或修改，不会清空数据。</small></div></div><input type="file" accept=".txt,.md,.json,text/plain,text/markdown,application/json" multiple data-file-input hidden>${extra}</div><div class="file-chips">${options.attachments.map((f, i) => `<span>${escape(f.name)} <small>${f.text.length}字</small><button type="button" data-remove-file="${i}" aria-label="移除附件 ${escape(f.name)}">×</button></span>`).join('')}</div>`;
 }
-export function bindComposerOptions(root, options, { onChange, onRace, notify }) {
+export function bindComposerOptions(root, options, { onChange, notify }) {
   const plus = root.querySelector('[data-options-plus]'),
     theme = root.querySelector('[data-theme-open]');
   const menu = root.querySelector('[data-options-menu]'),
@@ -60,10 +61,6 @@ export function bindComposerOptions(root, options, { onChange, onRace, notify })
   root.__disposeOptions?.();
   document.addEventListener('pointerdown', outside);
   root.__disposeOptions = () => document.removeEventListener('pointerdown', outside);
-  root.querySelector('[data-race-open]').onclick = () => {
-    close();
-    onRace();
-  };
   root.querySelector('[data-add-file]').onclick = () => {
     close();
     root.querySelector('[data-file-input]').click();
