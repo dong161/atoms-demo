@@ -253,7 +253,13 @@ export async function concludeRace(db, raceId) {
   }
   const review = adopted.score_detail ? JSON.parse(adopted.score_detail).review : null;
   const results = review?.results || [];
-  const unmet = results.filter((r) => !r.ok).map((r) => String(r.feature || '').slice(0, 60));
+  // 需求条目常常很长（「内联编辑主流程：点击编辑…」）：结论里只用冒号/括号前的短名称
+  const shortName = (f) =>
+    String(f || '')
+      .split(/[：:（(，,]/)[0]
+      .trim()
+      .slice(0, 24) || String(f || '').slice(0, 24);
+  const unmet = results.filter((r) => !r.ok).map((r) => shortName(r.feature));
   const others = ranked.filter((e) => e.id !== adopted.id).map((e) => ({ model: e.model, score: e.score }));
   const failed = entries.filter((e) => e.status === 'failed').length;
   const lines = [
