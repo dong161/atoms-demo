@@ -117,7 +117,14 @@ server/
   mock/               演示模式模板
 public/
   index.html, share.html（发布页与新标签预览）, css/, img/（AI 原创素材）
-  js/app.js           前端主程序
+  js/app.js           前端入口：路由与启动
+  js/core.js          基础工具、全局状态、API 请求
+  js/auth.js          账号：注册 / 登录 / 恢复码、首次引导
+  js/home.js          首页：落地页、输入框、示例、我的项目
+  js/workspace.js     工作区：项目加载、对话、输入框、任务事件流
+  js/preview.js       预览区：应用查看器、Console、点选修改、一键修复
+  js/race.js          赛马对比：候选卡片、缩略图、自动校验打分
+  js/actions.js       项目操作：采用、回退、Remix、下载、发布、版本历史
   js/sandbox.js       预览宿主：注入运行时、数据同步队列、自动校验评分
   js/runtime.js       注入生成应用的运行时：localStorage 替身、报错收集、点选、探针
 ops/model-gateway/    本机模型网关与隧道守护脚本（不含配置与密钥）
