@@ -1,9 +1,9 @@
 // 赛马对比：候选卡片、缩略图、自动校验打分
 import { adopt } from './actions.js';
-import { $, api, esc, fmtChars, modelLabel, state } from './core.js';
+import { $, api, esc, fmtChars, modelLabel, state, toast } from './core.js';
 import { renderViewer } from './preview.js';
 import { mountPreview, probeApp } from './sandbox.js';
-import { findEntry, renderChat, setView } from './workspace.js';
+import { findEntry, reloadProject, renderChat, renderComposer, setView } from './workspace.js';
 
 // ---------- 赛马对比 ----------
 export function renderRace(box) {
@@ -175,6 +175,7 @@ export function scheduleScoring(force = false) {
       scoringQueue = scoringQueue.then(() => scoreEntry(ws, e)).catch(() => {});
     }
   }
+  if (ws.scoring.size) renderChat();
 }
 
 export async function scoreEntry(ws, e) {
@@ -189,12 +190,23 @@ export async function scoreEntry(ws, e) {
     api(`/api/race-entries/${e.id}/score`, {
       method: 'POST',
       body: { score: result.score, detail: { score: result.score, items: result.items } },
-    }).catch(() => {});
+    })
+      .then(async (r) => {
+        // 最后一个分数写回后，服务端会自动采用最高分并写出结论：刷新对话，切到新版本
+        if (!r?.concluded || ws.closed || state.ws !== ws) return;
+        await reloadProject({ keepView: !r.concluded.autoAdopted });
+        if (r.concluded.autoAdopted && r.concluded.version) {
+          setView({ type: 'version', id: r.concluded.version.id });
+          toast(`已采用推荐的候选（${r.concluded.summary?.meta?.score ?? ''} 分），可以继续修改了`);
+        }
+      })
+      .catch(() => {});
   } finally {
     ws.scoring.delete(e.id);
     if (!ws.closed && state.ws === ws) {
       if (ws.view?.type === 'race') renderViewer(true);
-      if (ws.scoring.size === 0) renderChat();
+      renderChat(); // 更新「还剩 N 个」的打分进度
+      if (ws.scoring.size === 0) renderComposer();
     }
   }
 }

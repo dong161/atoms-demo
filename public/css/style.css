@@ -2949,3 +2949,35 @@ details.review li.miss {
   background: #fff7ed;
   border-color: #fed7aa;
 }
+
+/* Mike 结论卡片 */
+.summary-card {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+}
+.summary-card p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.summary-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-weight: 600;
+}
+.summary-score {
+  flex: none;
+  min-width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+}
+.summary-card .btn {
+  margin: 10px 6px 0 0;
+}

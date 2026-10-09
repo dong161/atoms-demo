@@ -208,6 +208,76 @@ export async function recoverInterruptedRaces(db) {
   return summary;
 }
 
+/**
+ * 一轮赛马的收尾结论：所有完成的候选都打完分后调用（打分在浏览器沙箱里进行，结果逐个写回）。
+ * - 用 summary_at 条件更新抢占，保证并发写回时只写一次结论；
+ * - 按总分（同分取耗时短）排序，本轮还没采用的就自动采用最高分，让输入框立刻可以继续修改；
+ * - Mike 在对话里写出结论：采用了谁、需求满足几项、哪些没满足、其它候选的分数、下一步建议。
+ * 返回 null 表示还没到收尾时机（或已经收过尾）。
+ */
+export async function concludeRace(db, raceId) {
+  const race = await db.get('SELECT * FROM races WHERE id = $1', [raceId]);
+  if (!race || race.summary_at || race.status === 'running' || race.status === 'failed') return null;
+  const entries = await db.all(
+    'SELECT id, model, status, score, score_detail, duration_ms, created_at FROM race_entries WHERE race_id = $1',
+    [raceId],
+  );
+  if (entries.some((e) => e.status === 'running')) return null;
+  const done = entries.filter((e) => e.status === 'done');
+  if (!done.length || done.some((e) => e.score == null)) return null;
+  const claim = await db.run('UPDATE races SET summary_at = $1 WHERE id = $2 AND summary_at IS NULL', [now(), raceId]);
+  if (!claim.changes) return null;
+
+  const ranked = [...done].sort((a, b) => b.score - a.score || (a.duration_ms || 0) - (b.duration_ms || 0));
+  const best = ranked[0];
+  const name = (m) => (m === 'mock' ? '演示模型' : m);
+  let adoptedId = race.adopted_entry_id;
+  let version = null;
+  let versionMessage = null;
+  if (!adoptedId) {
+    try {
+      const out = await adoptEntry(db, best.id);
+      adoptedId = best.id;
+      version = out.version;
+      versionMessage = out.message;
+    } catch {
+      /* 用户刚好手动采用了别的候选：以用户的选择为准 */
+      adoptedId = (await db.get('SELECT adopted_entry_id FROM races WHERE id = $1', [raceId]))?.adopted_entry_id;
+    }
+  }
+  const adopted = done.find((e) => e.id === adoptedId) || best;
+  if (!version) {
+    const p = await db.get('SELECT current_version_id FROM projects WHERE id = $1', [race.project_id]);
+    const v = p?.current_version_id ? await db.get('SELECT id, seq, title FROM versions WHERE id = $1', [p.current_version_id]) : null;
+    if (v) version = { id: v.id, seq: v.seq, title: v.title };
+  }
+  const review = adopted.score_detail ? JSON.parse(adopted.score_detail).review : null;
+  const results = review?.results || [];
+  const unmet = results.filter((r) => !r.ok).map((r) => String(r.feature || '').slice(0, 60));
+  const others = ranked.filter((e) => e.id !== adopted.id).map((e) => ({ model: e.model, score: e.score }));
+  const failed = entries.filter((e) => e.status === 'failed').length;
+  const lines = [
+    `本轮结论：${done.length > 1 ? `${done.length} 个候选里` : ''}采用 ${name(adopted.model)}（${adopted.score} 分）${version ? `，已保存为 Version ${version.seq}` : ''}。`,
+    results.length
+      ? `需求验收：${results.length - unmet.length}/${results.length} 项满足${unmet.length ? `；未满足：${unmet.join('；')}` : '，全部满足'}。`
+      : '',
+    others.length ? `其它候选：${others.map((o) => `${name(o.model)} ${o.score} 分`).join('、')}，可在赛马对比里试用并改选。` : '',
+    failed ? `另有 ${failed} 路没有完成（原因见赛马卡片）。` : '',
+    unmet.length
+      ? `下一步：直接在下方告诉 Alex「补上：${unmet[0]}」，或点工具栏「选择元素」只改某一处。`
+      : '下一步：在预览里试用，想改哪里直接在下方输入，或点「选择元素」只改某一处。',
+  ].filter(Boolean);
+  const summary = await addMessage(db, race.project_id, 'mike', 'summary', lines.join('\n'), {
+    raceId,
+    adoptedEntryId: adopted.id,
+    score: adopted.score,
+    version,
+    unmet,
+    others,
+  });
+  return { summary, version, versionMessage, autoAdopted: !!versionMessage };
+}
+
 /** 采用某个赛马候选：生成正式版本、在对话里放一张版本卡片。 */
 export async function adoptEntry(db, entryId) {
   const entry = await db.get('SELECT * FROM race_entries WHERE id = $1', [entryId]);

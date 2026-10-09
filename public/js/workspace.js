@@ -171,7 +171,12 @@ export function renderChat() {
   const list = $('#chat-list');
   if (!list) return;
   const html = ws.data.messages.map(renderMessage).join('');
-  const working = ws.jobId ? `<div class="working"><span class="spinner"></span>${esc(ws.status || '智能体正在工作…')}</div>` : '';
+  const scoringLeft = ws.scoring?.size || 0;
+  const working = ws.jobId
+    ? `<div class="working"><span class="spinner"></span>${esc(ws.status || '智能体正在工作…')}</div>`
+    : scoringLeft
+      ? `<div class="working"><span class="spinner"></span>Mike 正在沙箱里试用并打分（还剩 ${scoringLeft} 个），完成后写出结论并采用推荐版本…</div>`
+      : '';
   list.innerHTML = html + working;
   bindWorkflow(list);
   list.querySelectorAll('[data-open-race]').forEach((b) => (b.onclick = () => setView({ type: 'race', id: b.dataset.openRace })));
@@ -278,6 +283,19 @@ function patchWorkflow(id) {
 export function renderMessage(m) {
   const ws = state.ws;
   if (m.kind === 'workflow') return workflowCard(m);
+  if (m.kind === 'summary') {
+    const meta = m.meta || {};
+    const [head, ...rest] = String(m.content).split('\n');
+    // 气泡保留换行（pre-wrap），这里拼成一行，避免模板缩进被显示成空白
+    const body = [
+      `<div class="summary-head"><span class="summary-score">${meta.score ?? '-'}</span><div>${esc(head)}</div></div>`,
+      ...rest.map((l) => `<p>${esc(l)}</p>`),
+      meta.version ? `<button class="btn sm" data-open-version="${esc(meta.version.id)}">预览 Version ${meta.version.seq}</button>` : '',
+      meta.raceId ? `<button class="btn sm ghost" data-open-race="${esc(meta.raceId)}">查看赛马对比</button>` : '',
+    ].join('');
+    return `<div class="msg">${avatar('mike')}<div class="body"><div class="who"><b>Mike</b> · 组长 · ${fmtTime(m.created_at)}</div><div class="bubble summary-card">${body}</div></div></div>`;
+  }
+
   if (m.role === 'user') {
     const t = m.meta?.target;
     const chip = t
@@ -355,7 +373,9 @@ export function renderComposer() {
   const placeholder = running
     ? '智能体正在工作，按 Enter 把下一条修改加入队列，完成后自动发送'
     : !canEdit
-      ? '等第一个版本生成后，就可以在这里继续修改'
+      ? ws.scoring?.size
+        ? 'Mike 正在打分，完成后会自动采用推荐版本，然后就可以在这里继续修改'
+        : '等第一个版本生成后，就可以在这里继续修改'
       : target
         ? '说说这个元素要怎么改，例如：改成圆角绿色按钮，文字换成「开始专注」'
         : '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮';

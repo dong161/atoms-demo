@@ -11,7 +11,7 @@ import { ModelHealth } from './model-health.js';
 import { verifyGoogleIdToken } from './google-auth.js';
 import { openDb } from './db.js';
 import { llmConfig } from './llm.js';
-import { JobHub, runRace, adoptEntry, recoverInterruptedRaces, createVersion, addMessage, newId } from './jobs.js';
+import { JobHub, runRace, adoptEntry, concludeRace, recoverInterruptedRaces, createVersion, addMessage, newId } from './jobs.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_MODELS = 3;
@@ -406,8 +406,14 @@ export async function createApp({
     '/api/projects/:id',
     wrap(auth),
     wrap(async (req, res) => {
-      const p = await ownProject(req, res);
+      let p = await ownProject(req, res);
       if (!p) return;
+      // 打完分却还停在「等你选择」的赛马（例如结论功能上线前的项目、或分数已写回但收尾没跑成）：打开时补上收尾
+      const pendingReview = await db.all("SELECT id FROM races WHERE project_id = $1 AND status = 'review' AND summary_at IS NULL", [p.id]);
+      if (pendingReview.length && !hub.activeFor(p.id)) {
+        for (const r of pendingReview) await concludeRace(db, r.id).catch(() => {});
+        p = await db.get('SELECT * FROM projects WHERE id = $1', [p.id]);
+      }
       const [messages, versions, races, entries] = await Promise.all([
         db.all('SELECT * FROM messages WHERE project_id = $1 ORDER BY created_at, id', [p.id]),
         db.all('SELECT id, seq, title, model, source, score, created_at FROM versions WHERE project_id = $1 ORDER BY seq DESC', [p.id]),
@@ -581,7 +587,9 @@ export async function createApp({
       const prev = e.score_detail ? JSON.parse(e.score_detail) : {};
       const detail = { ...prev, runtime: req.body?.detail ?? null };
       await db.run('UPDATE race_entries SET score = $1, score_detail = $2 WHERE id = $3', [score, JSON.stringify(detail), e.id]);
-      res.json({ ok: true, score });
+      // 这一轮最后一个分数写回时，自动采用最高分并由 Mike 写出结论
+      const concluded = await concludeRace(db, e.race_id);
+      res.json({ ok: true, score, concluded });
     }),
   );
 
