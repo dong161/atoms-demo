@@ -295,6 +295,35 @@ try {
   const gone = await page.request.get(base + `/api/share/${pub.slug}`);
   check('取消发布后旧链接失效', gone.status() === 404);
 
+  // ---------- 对话修改：Mike 先出修改方案，结束后写结论、时间线收尾、数据保留 ----------
+  const before = (await api(page, `/api/projects/${pid}`)).json;
+  const summariesBefore = before.messages.filter((m) => m.kind === 'summary').length;
+  await page.goto(`${base}/#/p/${pid}`, { waitUntil: 'networkidle' });
+  await page.fill('#chat-input', '把主色换成绿色');
+  await page.press('#chat-input', 'Enter');
+  await page.waitForTimeout(3000);
+  let after = await idle(page, pid);
+  for (let i = 0; i < 60 && after.messages.filter((m) => m.kind === 'summary').length <= summariesBefore; i++) {
+    await page.waitForTimeout(5000);
+    after = (await api(page, `/api/projects/${pid}`)).json;
+  }
+  const editPlan = after.messages.find((m) => m.kind === 'edit-plan');
+  check('修改前 Mike 写出修改方案', !!editPlan, editPlan ? `${editPlan.meta.editPlan.changes.length} 处改动` : '');
+  const lastSummary = after.messages.filter((m) => m.kind === 'summary').at(-1);
+  check(
+    '修改完成后写出结论并存为新版本',
+    after.messages.filter((m) => m.kind === 'summary').length > summariesBefore && after.versions.length > before.versions.length,
+    lastSummary?.content.split('\n')[0] || '',
+  );
+  const lastWf = after.messages.filter((m) => m.kind === 'workflow').at(-1);
+  check(
+    '修改轮时间线收尾为「打分完成」',
+    /^打分完成/.test(lastWf?.meta?.steps?.at(-1)?.label || ''),
+    lastWf?.meta?.steps?.at(-1)?.label || '',
+  );
+  const kvAfter = (await api(page, `/api/projects/${pid}/kv`)).json.data;
+  check('修改后原有数据保留', JSON.stringify(kvAfter).includes('冒烟记录'));
+
   // ---------- 手机尺寸 ----------
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const mobile = await mctx.newPage();
