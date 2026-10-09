@@ -2671,3 +2671,281 @@ details.review li.miss {
 .ws-actions .user-menu {
   margin-left: 4px;
 }
+
+/* 工作流程时间线 */
+.msg.workflow {
+  padding-left: 44px;
+}
+.wf {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 2px 12px;
+}
+.wf > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.wf > summary::-webkit-details-marker {
+  display: none;
+}
+.wf .wf-count {
+  color: var(--faint);
+  font-size: 12px;
+}
+.wf .wf-caret {
+  margin-left: auto;
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+.wf[open] .wf-caret {
+  transform: rotate(180deg);
+}
+.wf-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #10b981;
+  color: #fff;
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+}
+.wf .spinner {
+  width: 14px;
+  height: 14px;
+}
+.wf-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0 0 0 6px;
+  border-left: 1px dashed var(--line);
+}
+.wf-step {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 5px 0 5px 12px;
+  font-size: 13px;
+}
+.wf-node {
+  position: absolute;
+  left: -11px;
+  top: 9px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #c7c9d9;
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  color: #fff;
+}
+.wf-step.done .wf-node {
+  background: var(--primary);
+}
+.wf-step.failed .wf-node {
+  background: #ef4444;
+  width: 12px;
+  height: 12px;
+  left: -12px;
+}
+.wf-step.running .wf-node {
+  background: #fff;
+}
+.wf-step.running .wf-node .spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 2px;
+}
+.wf-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.wf-who {
+  font-weight: 600;
+  font-size: 12px;
+}
+.wf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #f5f5fa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px 8px;
+  color: var(--text);
+}
+.wf-chip i {
+  font-style: normal;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.wf-chip code {
+  font-size: 12px;
+  background: none;
+  color: var(--primary);
+}
+.wf-lane {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--primary-soft);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.wf-step small {
+  color: var(--faint);
+  font-size: 12px;
+}
+.wf-step.failed small {
+  color: #dc2626;
+}
+.wf-more {
+  padding: 2px 0 4px 12px;
+  font-size: 12px;
+}
+
+/* 预览 / 代码 切换与代码视图 */
+.seg {
+  display: inline-flex;
+  background: #f1f2f7;
+  border-radius: 9px;
+  padding: 2px;
+  margin-left: 6px;
+}
+.seg button {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.seg button.on {
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(20, 20, 50, 0.12);
+  font-weight: 600;
+}
+.frame-wrap.code-mode {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  background: #fbfbfe;
+}
+.code-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+}
+.code-tab {
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.code-head small {
+  color: var(--faint);
+}
+.code-head .spacer {
+  flex: 1;
+}
+.code-body {
+  flex: 1;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 0;
+  font:
+    12.5px/1.65 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: #2b2d42;
+  tab-size: 2;
+}
+.code-body code {
+  display: block;
+  white-space: pre;
+}
+.code-body .ln {
+  display: inline-block;
+  width: 46px;
+  padding-right: 12px;
+  text-align: right;
+  color: #b5b8c8;
+  user-select: none;
+}
+.tk-t {
+  color: #7c3aed;
+}
+.tk-s {
+  color: #059669;
+}
+.tk-k {
+  color: #2563eb;
+}
+.tk-c {
+  color: #9aa0b5;
+  font-style: italic;
+}
+
+/* 项目标题菜单 */
+.proj-menu .ws-title {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  max-width: 320px;
+}
+.proj-menu .ws-title:hover {
+  background: #f3f3f8;
+}
+.proj-menu .caret {
+  font-style: normal;
+  color: var(--faint);
+  font-size: 12px;
+}
+.menu.left {
+  left: 0;
+  right: auto;
+}
+.menu [role='menuitem'][disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.target-chip.queued {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}

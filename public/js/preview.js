@@ -60,6 +60,7 @@ export async function renderPreview(box) {
       <button class="icon-btn${ws.device === 'desktop' ? ' on' : ''}" data-device="desktop" title="桌面视图">${ICONS.desktop}</button>
       <button class="icon-btn${ws.device === 'mobile' ? ' on' : ''}" data-device="mobile" title="手机视图">${ICONS.mobile}</button>
       <button class="icon-btn" id="vt-refresh" title="刷新预览">${ICONS.refresh}</button>
+      <div class="seg" role="tablist" aria-label="查看方式"><button role="tab" data-vmode="preview" aria-selected="${ws.viewerMode !== 'code'}" class="${ws.viewerMode !== 'code' ? 'on' : ''}">预览</button><button role="tab" data-vmode="code" aria-selected="${ws.viewerMode === 'code'}" class="${ws.viewerMode === 'code' ? 'on' : ''}">代码</button></div>
       <span class="label">${label}</span><span class="spacer"></span>
       ${
         v.type === 'version' && v.id === d.project.current_version_id
@@ -88,6 +89,13 @@ export async function renderPreview(box) {
       }),
   );
   $('#vt-refresh').onclick = () => renderViewer(true);
+  box.querySelectorAll('[data-vmode]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        ws.viewerMode = b.dataset.vmode;
+        renderViewer(true);
+      }),
+  );
   $('#vt-console').onclick = () => {
     ws.consoleOpen = !ws.consoleOpen;
     $('#console').classList.toggle('hidden', !ws.consoleOpen);
@@ -135,6 +143,17 @@ export async function renderPreview(box) {
     return;
   }
   if (stale()) return;
+  if (ws.viewerMode === 'code') {
+    ws.preview = null;
+    $('#frame-wrap').className = 'frame-wrap code-mode';
+    $('#frame-wrap').innerHTML = codeView(html, `index.html`);
+    $('#code-copy').onclick = () =>
+      navigator.clipboard.writeText(html).then(
+        () => toast('代码已复制'),
+        () => toast('复制失败，请手动选择复制', true),
+      );
+    return;
+  }
   ws.consoleLines = [];
   ws.picking = false;
   renderConsole();
@@ -218,4 +237,20 @@ export function renderConsole() {
     ? lines.map((l) => `<div class="line ${esc(l.level)}">[${esc(l.level)}] ${esc(l.text)}</div>`).join('')
     : '<div class="line">暂无输出。应用里的 console 输出和报错会显示在这里。</div>';
   el.scrollTop = el.scrollHeight;
+}
+
+// ---------- 只读代码视图（轻量语法高亮：先转义再着色，不会执行或注入代码） ----------
+function highlight(line) {
+  const e = esc(line);
+  if (/^\s*(\/\/|\/\*|\*|&lt;!--)/.test(e)) return `<span class="tk-c">${e}</span>`;
+  // 单次扫描：字符串、标签名、关键字互不嵌套，避免在已插入的 <span> 上二次替换
+  return e.replace(
+    /(&quot;.*?&quot;|&#39;.*?&#39;|&#x27;.*?&#x27;|`[^`]*`)|(&lt;\/?)([a-zA-Z][\w-]*)|\b(const|let|var|function|return|if|else|for|while|new|class|import|export|async|await|try|catch|switch|case|break|of|in|true|false|null|undefined)\b/g,
+    (m, str, lt, tag, kw) =>
+      str ? `<span class="tk-s">${str}</span>` : lt ? `${lt}<span class="tk-t">${tag}</span>` : `<span class="tk-k">${kw}</span>`,
+  );
+}
+function codeView(html, name) {
+  const rows = String(html).split('\n');
+  return `<div class="code-view"><div class="code-head"><span class="code-tab">${esc(name)}</span><small>${rows.length} 行 · ${(html.length / 1024).toFixed(1)} KB · 只读</small><span class="spacer"></span><button class="btn sm ghost" id="code-copy">⧉ 复制代码</button></div><pre class="code-body"><code>${rows.map((r, i) => `<span class="ln">${i + 1}</span>${highlight(r)}`).join('\n')}</code></pre></div>`;
 }

@@ -1,6 +1,6 @@
 // 工作区：加载项目、对话、输入框、任务事件流
 import { bindUserMenu, userMenu } from './auth.js';
-import { downloadCurrent, publish, renameProject, renderDrawer } from './actions.js';
+import { downloadCurrent, publish, remixVersion, renameProject, renderDrawer } from './actions.js';
 import { bindComposerOptions, optionsMarkup, readComposerOptions } from './composer-options.js';
 import { $, AGENTS, ICONS, api, avatar, esc, fmtChars, fmtTime, modelLabel, raceModels, state, store, toast } from './core.js';
 import { bindRaceControls, raceControls, topbar } from './home.js';
@@ -113,7 +113,15 @@ export function renderWorkspace() {
   app.innerHTML = `<div class="ws">
     <div class="ws-header">
       <button class="icon-btn" id="ws-back" title="返回首页">${ICONS.back}</button>
-      <span class="ws-title" id="ws-title" title="点击重命名">${esc(project.title)}</span>
+      <div class="user-menu proj-menu"><button class="ws-title" id="ws-title" aria-haspopup="menu" aria-expanded="false">${esc(project.title)}<i class="caret">⌄</i></button>
+        <div class="menu hidden left" role="menu" id="proj-menu">
+          <button role="menuitem" data-pm="home"><i>⌂</i><span>返回我的项目</span></button>
+          <button role="menuitem" data-pm="rename"><i>✎</i><span>重命名项目</span></button>
+          <button role="menuitem" data-pm="open" ${cur ? '' : 'disabled'}><i>↗</i><span>在新标签页打开</span></button>
+          <button role="menuitem" data-pm="export" ${cur ? '' : 'disabled'}><i>⤓</i><span>导出 HTML</span></button>
+          <button role="menuitem" data-pm="remix" ${cur ? '' : 'disabled'}><i>⑂</i><span>Remix 成新项目</span></button>
+          <hr><button role="menuitem" data-pm="delete" class="danger"><i>🗑</i><span>删除项目</span></button>
+        </div></div>
       ${cur ? `<span class="badge primary">Version ${cur.seq}</span>` : ''}
       <div class="ws-actions">
         <button class="btn sm" id="ws-history">${ICONS.history}<span class="wide">版本历史</span></button>
@@ -134,7 +142,7 @@ export function renderWorkspace() {
   ${ws.drawer ? '<div id="drawer-slot"></div>' : ''}`;
   $('#ws-back').onclick = () => (location.hash = '#/');
   bindUserMenu(app);
-  $('#ws-title').onclick = renameProject;
+  bindProjectMenu(project, cur);
   $('#ws-history').onclick = () => {
     ws.drawer = !ws.drawer;
     renderWorkspace();
@@ -165,13 +173,111 @@ export function renderChat() {
   const html = ws.data.messages.map(renderMessage).join('');
   const working = ws.jobId ? `<div class="working"><span class="spinner"></span>${esc(ws.status || '智能体正在工作…')}</div>` : '';
   list.innerHTML = html + working;
+  bindWorkflow(list);
   list.querySelectorAll('[data-open-race]').forEach((b) => (b.onclick = () => setView({ type: 'race', id: b.dataset.openRace })));
   list.querySelectorAll('[data-open-version]').forEach((b) => (b.onclick = () => setView({ type: 'version', id: b.dataset.openVersion })));
   list.scrollTop = list.scrollHeight;
 }
 
+// ---------- 项目标题下拉菜单 ----------
+function bindProjectMenu(project, cur) {
+  const btn = $('#ws-title');
+  const menu = $('#proj-menu');
+  const set = (open) => {
+    menu.classList.toggle('hidden', !open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      menu.querySelector('[role=menuitem]:not([disabled])')?.focus();
+      setTimeout(() => document.addEventListener('pointerdown', outside));
+    } else document.removeEventListener('pointerdown', outside);
+  };
+  const outside = (e) => {
+    if (!menu.contains(e.target) && !btn.contains(e.target)) set(false);
+  };
+  btn.onclick = () => set(menu.classList.contains('hidden'));
+  menu.onkeydown = (e) => {
+    if (e.key === 'Escape') {
+      set(false);
+      btn.focus();
+    }
+  };
+  menu.querySelectorAll('[data-pm]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        set(false);
+        const act = b.dataset.pm;
+        if (act === 'home') location.hash = '#/';
+        else if (act === 'rename') renameProject();
+        else if (act === 'open')
+          window.open(`/preview?project=${encodeURIComponent(project.id)}&version=${encodeURIComponent(cur.id)}`, '_blank');
+        else if (act === 'export') downloadCurrent();
+        else if (act === 'remix') remixVersion(cur.id);
+        else if (act === 'delete') {
+          if (state.ws.jobId) return toast('请先停止正在进行的生成', true);
+          if (!confirm(`删除「${project.title}」后，项目、所有版本和应用数据都无法恢复，确定删除吗？`)) return;
+          try {
+            await api(`/api/projects/${project.id}`, { method: 'DELETE' });
+            toast('项目已删除');
+            location.hash = '#/';
+          } catch (err) {
+            toast(err.message, true);
+          }
+        }
+      }),
+  );
+}
+
+// ---------- 工作流程时间线 ----------
+const WF_ICON = { read: '📄', think: '💭', write: '✏️', assign: '@', check: '☑', version: '◆', review: '⇄' };
+const WF_VISIBLE = 5;
+function workflowCard(m) {
+  const ws = state.ws;
+  const steps = m.meta?.steps || [];
+  const running = steps.some((st) => st.status === 'running');
+  ws.wfOpen ??= {};
+  const open = ws.wfOpen[m.id] ?? running;
+  const all = ws.wfAll?.[m.id];
+  const hidden = all ? 0 : Math.max(0, steps.length - WF_VISIBLE);
+  const row = (st) => {
+    const who = AGENTS[st.agent] || AGENTS.system;
+    return `<li class="wf-step ${st.status}"><span class="wf-node">${st.status === 'running' ? '<span class="spinner"></span>' : st.status === 'failed' ? '✕' : ''}</span>
+      <div class="wf-line"><span class="wf-who" style="color:${who.color}">${who.name}</span><span class="wf-chip"><i>${WF_ICON[st.action] || '•'}</i>${esc(st.label)}${st.target ? ` <code>${esc(st.target)}</code>` : ''}</span>${st.lane ? `<span class="wf-lane">${esc(st.lane)}</span>` : ''}${st.detail ? `<small>${esc(st.detail)}</small>` : ''}</div></li>`;
+  };
+  return `<div class="msg workflow" data-wf-msg="${m.id}"><details class="wf" ${open ? 'open' : ''}>
+    <summary>${running ? '<span class="spinner"></span>' : '<span class="wf-check">✓</span>'}<b>工作流程</b><span class="wf-count">${running ? `已处理 ${steps.filter((st) => st.status !== 'running').length} 步` : `共 ${steps.length} 步`}</span><span class="wf-caret">⌄</span></summary>
+    <ol class="wf-list">${hidden ? `<li class="wf-more"><button type="button" class="link" data-wf-all="${m.id}">显示 ${hidden} 个更早的步骤</button></li>` : ''}${steps.slice(hidden).map(row).join('')}</ol>
+  </details></div>`;
+}
+
+function bindWorkflow(root) {
+  root.querySelectorAll('[data-wf-msg] details').forEach((d) => {
+    d.ontoggle = () => {
+      state.ws.wfOpen[d.parentElement.dataset.wfMsg] = d.open;
+    };
+  });
+  root.querySelectorAll('[data-wf-all]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        (state.ws.wfAll ??= {})[b.dataset.wfAll] = true;
+        patchWorkflow(b.dataset.wfAll);
+      }),
+  );
+}
+
+function patchWorkflow(id) {
+  const m = state.ws.data.messages.find((x) => x.id === id);
+  const el = document.querySelector(`[data-wf-msg="${id}"]`);
+  if (!m || !el) return renderChat();
+  const list = $('#chat-list');
+  const atBottom = list && list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  el.outerHTML = workflowCard(m);
+  bindWorkflow(list);
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
+
 export function renderMessage(m) {
   const ws = state.ws;
+  if (m.kind === 'workflow') return workflowCard(m);
   if (m.role === 'user') {
     const t = m.meta?.target;
     const chip = t
@@ -246,18 +352,21 @@ export function renderComposer() {
   const options = ws.generation;
   const old = $('#chat-input')?.value ?? ws.draft ?? '';
   const target = ws.target;
-  const placeholder = !canEdit
-    ? '等第一个版本生成后，就可以在这里继续修改'
-    : target
-      ? '说说这个元素要怎么改，例如：改成圆角绿色按钮，文字换成「开始专注」'
-      : '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮';
+  const placeholder = running
+    ? '智能体正在工作，按 Enter 把下一条修改加入队列，完成后自动发送'
+    : !canEdit
+      ? '等第一个版本生成后，就可以在这里继续修改'
+      : target
+        ? '说说这个元素要怎么改，例如：改成圆角绿色按钮，文字换成「开始专注」'
+        : '描述要修改的地方，例如：主色换成蓝色，再加一个按截止日期排序的按钮';
   form.innerHTML = `
     ${
       target
         ? `<div class="target-chip">${ICONS.pick}<span>只修改选中的 <b>&lt;${esc(target.tag)}&gt;</b>${target.text ? ` “${esc(target.text.slice(0, 30))}”` : ''}</span><button type="button" class="icon-btn" id="target-clear" title="取消选择">✕</button></div>`
         : ''
     }
-    <textarea id="chat-input" rows="2" maxlength="2000" placeholder="${placeholder}" ${canEdit ? '' : 'disabled'}></textarea>
+    ${ws.queued ? `<div class="target-chip queued">⏳<span>已排队：${esc(ws.queued.slice(0, 40))}</span><button type="button" class="icon-btn" id="queue-clear" title="取消排队">✕</button></div>` : ''}
+    <textarea id="chat-input" rows="2" maxlength="2000" placeholder="${placeholder}" ${canEdit || running ? '' : 'disabled'}></textarea>
     <div class="bar">
       <div class="composer-left" id="chat-race"></div>
       ${
@@ -296,10 +405,24 @@ export function renderComposer() {
         toast(e.message, true);
       }
     });
+  $('#queue-clear') &&
+    ($('#queue-clear').onclick = () => {
+      ta.value = ws.queued;
+      ws.queued = null;
+      renderComposer();
+    });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const text = ta.value.trim();
-    if (!text || running) return;
+    if (!text) return;
+    if (running) {
+      // 运行中不打断当前任务：放进队列，本轮结束后自动发送
+      ws.queued = text;
+      ws.draft = '';
+      ta.value = '';
+      renderComposer();
+      return toast('已加入队列，当前任务完成后自动发送');
+    }
     try {
       const r = await api(`/api/projects/${ws.id}/messages`, {
         method: 'POST',
@@ -316,6 +439,25 @@ export function renderComposer() {
       toast(err.message, true);
     }
   };
+}
+
+// 队列里的修改：本轮成功结束且已有可修改的版本时自动发送；否则放回输入框
+async function sendQueued(ok) {
+  const ws = state.ws;
+  if (!ws || ws.closed || !ws.queued || ws.jobId) return;
+  await reloadProject().catch(() => {});
+  const text = ws.queued;
+  ws.queued = null;
+  if (!ok || !ws.data.project.current_version_id) {
+    renderComposer();
+    if ($('#chat-input')) $('#chat-input').value = ws.draft = text;
+    return toast(ok ? '先在赛马结果里采用一个候选，再发送排队的修改' : '本轮没有完成，排队的修改已放回输入框', true);
+  }
+  renderComposer();
+  const ta = $('#chat-input');
+  if (!ta) return;
+  ta.value = text;
+  $('#chat-form').requestSubmit();
 }
 
 // ---------- 任务事件流 ----------
@@ -375,6 +517,20 @@ export function handleEvent(ev) {
       ws.status = ev.text;
       updateWorking();
       break;
+    case 'workflow': {
+      const m = d.messages.find((x) => x.id === ev.messageId);
+      if (m) {
+        m.meta = { ...(m.meta || {}), steps: ev.steps };
+        patchWorkflow(m.id);
+      }
+      // 底部状态跟随最新一个进行中的步骤
+      const cur = [...ev.steps].reverse().find((st) => st.status === 'running');
+      if (cur) {
+        ws.status = `${(AGENTS[cur.agent] || AGENTS.system).name} 正在${cur.label}${cur.lane ? `（${cur.lane}）` : ''}…`;
+        updateWorking();
+      }
+      break;
+    }
     case 'project':
       d.project.title = ev.title;
       $('#ws-title') && ($('#ws-title').textContent = ev.title);
@@ -442,6 +598,7 @@ export function handleEvent(ev) {
         renderChat();
         renderComposer();
       }
+      if (ws.queued) setTimeout(() => sendQueued(ev.status === 'done'), 600);
       break;
     default:
   }

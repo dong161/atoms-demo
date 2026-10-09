@@ -66,3 +66,26 @@ test('服务重启：已完成的候选不丢——一个完成就采用，多�
     await db.close();
   }
 });
+
+test('工作流程时间线：重启后停在进行中的步骤标记为中断，其它步骤保留', async () => {
+  const db = await openDb({ databaseUrl: '', sqlitePath: ':memory:' });
+  try {
+    const steps = [
+      { id: 0, agent: 'mike', label: '读取需求', status: 'done' },
+      { id: 1, agent: 'alex', label: '写入文件', status: 'running' },
+    ];
+    await db.run(
+      "INSERT INTO messages (id,project_id,role,kind,content,meta,created_at) VALUES ('w','p','system','workflow','工作流程',$1,1)",
+      [JSON.stringify({ steps })],
+    );
+    await recoverInterruptedRaces(db);
+    const meta = JSON.parse((await db.get("SELECT meta FROM messages WHERE id = 'w'")).meta);
+    assert.deepEqual(
+      meta.steps.map((s) => s.status),
+      ['done', 'failed'],
+    );
+    assert.equal(meta.steps[1].detail, '服务重启，任务中断');
+  } finally {
+    await db.close();
+  }
+});
