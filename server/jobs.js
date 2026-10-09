@@ -355,6 +355,7 @@ async function buildEntry({
     });
     const check = staticCheck(html);
     const duration = now() - started;
+    cfg.health?.record(entry.model, { ok: true, ms: duration });
     // 代码写完后由 Mike 对照需求逐条验收（计入「需求覆盖」得分）
     emit('progress', {
       entryId: entry.id,
@@ -390,6 +391,8 @@ async function buildEntry({
     });
     return { ok: true, id: entry.id };
   } catch (e) {
+    // 用户主动停止不算模型的问题；被淘汰或出错都计入健康度
+    if (!(signal.aborted && signal.reason !== LAGGING)) cfg.health?.record(entry.model, { ok: false, ms: now() - started });
     if (signal.reason === LAGGING) e = new Error(`领先候选完成 ${Math.round(LAGGING_GRACE_MS / 1000)} 秒后仍未完成，已自动淘汰`);
     await db.run('UPDATE race_entries SET status = $1, error = $2, duration_ms = $3 WHERE id = $4', [
       'failed',

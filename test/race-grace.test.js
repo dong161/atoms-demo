@@ -14,7 +14,11 @@ async function fakeModels() {
     req.on('end', async () => {
       const j = JSON.parse(body);
       const sys = j.messages[0]?.content || '';
-      const content = sys.includes('验收') ? JSON.stringify({ results: [{ ok: true, note: 'ok' }], summary: 'ok' }) : APP;
+      const content = sys.includes('验收')
+        ? JSON.stringify({ results: [{ ok: true, note: 'ok' }], summary: 'ok' })
+        : sys.includes('开发说明')
+          ? JSON.stringify({ title: '计数器', summary: 's', features: ['计数'], design: 'd', data: 'n' })
+          : APP;
       if (j.model === 'slow') await new Promise((r) => setTimeout(r, 4000));
       if (res.destroyed) return;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });

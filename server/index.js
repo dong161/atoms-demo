@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { generationOptions } from './generation-options.js';
 import { parseTarget, parseErrors, editHint } from './edit-context.js';
+import { ModelHealth } from './model-health.js';
 import { openDb } from './db.js';
 import { llmConfig } from './llm.js';
 import { JobHub, runRace, adoptEntry, createVersion, addMessage, newId } from './jobs.js';
@@ -35,7 +36,8 @@ function rateLimiter(limit, windowMs) {
 const KV_MAX_VALUE = 200_000;
 const KV_MAX_KEYS = 200;
 
-export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = {}) {
+export async function createApp({ db, cfg = llmConfig(), hub = new JobHub(), health = new ModelHealth() } = {}) {
+  cfg.health = health;
   db ??= await openDb();
   // 进程重启后，内存里的任务都没了：把残留的 running 标记为失败，避免界面永远转圈
   await db.run("UPDATE race_entries SET status = 'failed', error = '服务重启，任务中断' WHERE status = 'running'");
@@ -87,9 +89,15 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
   // 本机模型网关经 Cloudflare 临时隧道接入，隧道重启后地址会变。
   // 守护脚本用网关令牌（即 LLM_API_KEY）把新地址报上来，无需改 Render 环境变量。
   const TUNNEL_URL = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/v1$/;
+  const parseModelList = (v) => (Array.isArray(v) ? [...new Set(v.map(String).filter((m) => /^[\w.:-]{1,60}$/.test(m)))].slice(0, 12) : []);
   if (!cfg.mockOnly && cfg.apiKey) {
     const saved = await db.get("SELECT v FROM settings WHERE k = 'llm_base_url'");
     if (saved && TUNNEL_URL.test(saved.v)) cfg.baseUrl = saved.v;
+    const savedModels = await db.get("SELECT v FROM settings WHERE k = 'llm_models'");
+    if (savedModels) {
+      const list = parseModelList(JSON.parse(savedModels.v));
+      if (list.length) cfg.models = list;
+    }
   }
   app.post(
     '/api/admin/llm-endpoint',
@@ -107,7 +115,18 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
         [baseUrl, Date.now()],
       );
       cfg.baseUrl = baseUrl;
-      res.json({ ok: true });
+      // 同时上报网关的模型清单：增删模型只改本机网关配置
+      const models = parseModelList(req.body?.models);
+      if (models.length) {
+        await db.run(
+          `INSERT INTO settings (k, v, updated_at) VALUES ('llm_models', $1, $2)
+         ON CONFLICT (k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
+          [JSON.stringify(models), Date.now()],
+        );
+        cfg.models = models;
+        if (!models.includes(cfg.plannerModel)) cfg.plannerModel = models[0];
+      }
+      res.json({ ok: true, models: cfg.models });
     }),
   );
 
@@ -119,7 +138,9 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     res.json({
       mockOnly: cfg.mockOnly,
       models: cfg.mockOnly ? ['mock'] : cfg.models,
-      defaultRace: cfg.mockOnly ? ['mock', 'mock'] : cfg.models.slice(0, 3),
+      // 默认赛马阵容按模型最近的成功率与耗时自动挑选
+      defaultRace: cfg.mockOnly ? ['mock', 'mock'] : health.rank(cfg.models).slice(0, 3),
+      health: cfg.mockOnly ? [] : health.snapshot(cfg.models),
       maxModels: MAX_MODELS,
     });
   });
@@ -224,7 +245,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub() } = 
     const allowed = cfg.mockOnly ? ['mock'] : cfg.models;
     let list = Array.isArray(input) ? input.map(String).filter((m) => allowed.includes(m) || m === 'mock') : [];
     if (cfg.mockOnly) list = list.map(() => 'mock');
-    if (list.length === 0) list = [cfg.mockOnly ? 'mock' : cfg.models[0]];
+    if (list.length === 0) list = [cfg.mockOnly ? 'mock' : health.rank(cfg.models)[0]];
     return list.slice(0, MAX_MODELS);
   }
 

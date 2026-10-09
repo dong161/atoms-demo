@@ -16,23 +16,49 @@ const PLANNER_SYSTEM = `你是 Atoms 团队的组长 Mike。用户会用一句�
 {"title":"应用名（≤12字）","summary":"一句话说明这个应用做什么","features":["核心功能1","核心功能2","..."],"design":"视觉风格与配色建议","data":"需要持久化保存哪些数据"}
 features 3-6 条，每条具体可验证。用和用户相同的语言回答。`;
 
+/** Mike 用哪个模型：首选 plannerModel，其余按健康度排序；最多尝试 3 个，前一个失败就换下一个 */
+export function plannerCandidates(cfg, limit = 3) {
+  const all = [...new Set([cfg.plannerModel, ...(cfg.models || [])].filter(Boolean))];
+  return (cfg.health ? cfg.health.rank(all) : all).slice(0, limit);
+}
+
+async function withPlannerFallback(cfg, signal, run) {
+  let lastError;
+  for (const model of plannerCandidates(cfg)) {
+    const started = Date.now();
+    try {
+      const out = await run(model);
+      cfg.health?.record(model, { ok: true, ms: Date.now() - started });
+      return out;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      cfg.health?.record(model, { ok: false, ms: Date.now() - started });
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('没有可用的模型');
+}
+
 export async function planProject({ cfg, prompt, signal, onDelta }) {
   if (cfg.mockOnly) return { ...mockPlan(prompt), source: 'mock' };
   try {
-    const raw = await streamChatWithRetry({
-      cfg,
-      model: cfg.plannerModel,
-      signal,
-      temperature: 0.4,
-      maxTokens: 1200,
-      onDelta,
-      messages: [
-        { role: 'system', content: PLANNER_SYSTEM },
-        { role: 'user', content: prompt },
-      ],
+    return await withPlannerFallback(cfg, signal, async (model) => {
+      const raw = await streamChatWithRetry({
+        cfg,
+        model,
+        signal,
+        temperature: 0.4,
+        maxTokens: 1200,
+        onDelta,
+        messages: [
+          { role: 'system', content: PLANNER_SYSTEM },
+          { role: 'user', content: prompt },
+        ],
+      });
+      const plan = parsePlan(raw);
+      if (!plan) throw new Error('规划结果无法解析');
+      return { ...plan, source: model };
     });
-    const plan = parsePlan(raw);
-    if (plan) return { ...plan, source: cfg.plannerModel };
   } catch (e) {
     if (signal?.aborted) throw e;
   }
@@ -179,18 +205,25 @@ export async function reviewBuild({ cfg, html, checklist, signal }) {
     };
   }
   try {
-    const raw = await streamChatWithRetry({
-      cfg,
-      model: cfg.plannerModel,
-      signal,
-      temperature: 0.1,
-      maxTokens: 1500,
-      messages: [
-        { role: 'system', content: REVIEW_SYSTEM },
-        { role: 'user', content: `需求清单：\n${checklist.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n代码：\n${html.slice(0, 60000)}` },
-      ],
+    return await withPlannerFallback(cfg, signal, async (model) => {
+      const raw = await streamChatWithRetry({
+        cfg,
+        model,
+        signal,
+        temperature: 0.1,
+        maxTokens: 1500,
+        messages: [
+          { role: 'system', content: REVIEW_SYSTEM },
+          {
+            role: 'user',
+            content: `需求清单：\n${checklist.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n代码：\n${html.slice(0, 60000)}`,
+          },
+        ],
+      });
+      const review = parseReview(raw, checklist, model);
+      if (!review.results) throw new Error(review.summary);
+      return review;
     });
-    return parseReview(raw, checklist, cfg.plannerModel);
   } catch (e) {
     if (signal?.aborted) throw e;
     return { source: 'error', summary: `验收失败：${e.message}`, results: null };
