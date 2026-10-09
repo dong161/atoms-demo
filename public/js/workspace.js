@@ -187,6 +187,7 @@ export function renderMessage(m) {
     const p = m.meta.plan;
     return `<div class="msg">${avatar(m.role)}<div class="body">${head}
       <div class="bubble plan-card"><h4>📋 ${esc(p.title)}</h4>${esc(p.summary)}
+        ${p.views?.length ? `<div class="kv">🗂 ${p.views.map(esc).join('；')}</div>` : ''}
         <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
         ${p.design ? `<div class="kv">🎨 ${esc(p.design)}</div>` : ''}${p.data ? `<div class="kv">💾 ${esc(p.data)}</div>` : ''}
         <div class="kv">${p.source === 'mock' ? '<span class="badge warn">演示数据</span>' : `<span class="badge">由 ${esc(p.source)} 拆解</span>`}</div>

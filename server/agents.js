@@ -11,10 +11,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------- Mike：需求拆解 ----------------
 
-const PLANNER_SYSTEM = `你是 Atoms 团队的组长 Mike。用户会用一句话描述想要的网页应用。
-把它拆成给工程师的简明开发说明，只输出 JSON，不要任何其它文字：
-{"title":"应用名（≤12字）","summary":"一句话说明这个应用做什么","features":["核心功能1","核心功能2","..."],"design":"视觉风格与配色建议","data":"需要持久化保存哪些数据"}
-features 3-6 条，每条具体可验证。用和用户相同的语言回答。`;
+const PLANNER_SYSTEM = `你是 Atoms 团队的组长 Mike（资深产品经理）。用户会用一句话描述想要的网页应用。
+你要把它扩展成一个「正式上线也拿得出手」的产品方案，写成交给工程师的开发说明。只输出 JSON，不要任何其它文字：
+{"title":"应用名（≤12字）","summary":"一句话说明这个应用帮谁解决什么问题","views":["视图1：包含什么","视图2：..."],"features":["功能1","功能2","..."],"design":"视觉风格：主色、氛围、布局方式、关键组件样式","data":"localStorage 中保存哪些数据（字段级）"}
+要求：
+- features 6-8 条，每条具体、可在页面上点一点就验证。覆盖：核心主流程（例如新建→处理→完成）、编辑与删除（删除要确认）、搜索/筛选/排序中合适的一项、统计或概览（数字、进度、分组汇总）、空状态引导（无数据时说明下一步并提供「载入示例数据」按钮）、以及 1-2 个让产品更好用的细节（快捷键、批量操作、导出/导入 JSON、撤销等，挑最适合的）。
+- views 2-4 个：一个主工作区加上概览/统计、详情或设置等，用标签页或侧边导航切换；简单工具类可以只有 1-2 个。
+- 技术边界（必须遵守，写进方案里也不能违背）：纯前端单文件 HTML；数据只用 localStorage；不要登录、后端、IndexedDB、第三方接口或外部资源。
+- 用和用户相同的语言回答。`;
 
 /** Mike 用哪个模型：首选 plannerModel，其余按健康度排序；最多尝试 3 个，前一个失败就换下一个 */
 export function plannerCandidates(cfg, limit = 3) {
@@ -48,7 +52,7 @@ export async function planProject({ cfg, prompt, signal, onDelta }) {
         model,
         signal,
         temperature: 0.4,
-        maxTokens: 1200,
+        maxTokens: 2000,
         onDelta,
         messages: [
           { role: 'system', content: PLANNER_SYSTEM },
@@ -75,6 +79,7 @@ export function parsePlan(raw) {
       title: String(j.title).slice(0, 40),
       summary: String(j.summary || ''),
       features: j.features.map(String).slice(0, 8),
+      views: Array.isArray(j.views) ? j.views.map(String).slice(0, 4) : [],
       design: String(j.design || ''),
       data: String(j.data || ''),
     };
@@ -92,19 +97,26 @@ export function mockPlan(prompt) {
 
 const ENGINEER_RULES = `硬性要求：
 1. 只输出一个完整的单文件 HTML（<!DOCTYPE html> 开头，</html> 结尾），CSS 和 JS 全部内联，不要输出任何解释或 markdown 围栏。
-2. 不引用任何外部资源（CDN、字体、图片 URL、接口都不行），图标用内联 SVG 或 emoji。
-3. 必须有真实交互，所有按钮都要能用。
-4. 用户数据用 localStorage 持久化（平台会把它同步到云端），刷新后数据要还在。饮水量、专注时长、计数、金额等真实业务统计首次打开必须从 0 或空记录开始，不得伪造用户已完成的记录。示例数据仅在适合的列表或展示应用中使用，并明确标为演示；编辑已有应用时不得重置或污染已保存的用户数据。
-5. 必须适配手机（含 viewport meta，375px 宽不出现横向滚动）。
-6. 界面语言与用户需求的语言一致；设计现代、留白充足、配色统一，主色写成 CSS 变量 --primary。
-7. 代码精炼，总长度控制在 600 行以内。`;
+2. 不引用任何外部资源（CDN、字体、图片 URL、接口都不行，运行环境会拦截），图标用内联 SVG。
+3. 必须有真实交互，每个按钮、表单、标签页都要真的能用；不要出现「敬请期待」「TODO」或点了没反应的控件。
+4. 用户数据只用 localStorage 持久化（平台会把它同步到云端），刷新后数据和当前视图都要还在。读取时做好容错（数据损坏不白屏）。
+5. 饮水量、专注时长、计数、金额、任务等真实业务数据首次打开必须从 0 或空记录开始，不得伪造用户已完成的记录；但空状态必须精心设计：插图（内联 SVG）+ 一句说明 + 主操作按钮 + 「载入示例数据」按钮（示例数据要像真实内容，载入后明确标为演示且可一键清除）。编辑已有应用时不得重置或污染已保存的用户数据。
+6. 必须适配手机（含 viewport meta，375px 宽不出现横向滚动；窄屏时侧边导航收起成顶部标签）。
+7. 界面语言与用户需求的语言一致。
+
+产品质量标准（按上线产品的标准做，不是演示页）：
+- 布局：有应用外壳（顶部栏含应用名与图标、主要操作；多视图用标签页或侧边导航），内容区有清晰的层级和留白，最大宽度合理居中。
+- 视觉：主色写成 CSS 变量 --primary，并定义一组配套变量（背景、卡片、边框、文字、次要文字、成功/警告/危险色、圆角、阴影）。卡片有细边框和柔和阴影，按钮有主次之分，hover/active/focus 状态和 150-200ms 过渡完整；统计数字醒目；优先级、状态等用彩色标签区分。
+- 交互：表单有校验和错误提示；新建/编辑用弹窗或抽屉（Esc 关闭、点击遮罩关闭）；删除二次确认；操作后用 toast 反馈；常用操作支持键盘（Enter 提交）。
+- 内容：方案里的每个功能和视图都要实现，统计要根据真实数据实时计算。
+- 代码：结构清晰（状态对象 + render 函数 + 事件委托），不要为了省篇幅砍功能；完整实现优先，通常 500-1200 行。`;
 
 function createMessages(plan, prompt) {
   return [
     { role: 'system', content: `你是 Atoms 团队的工程师 Alex，擅长把需求做成能直接运行的网页应用。\n${ENGINEER_RULES}` },
     {
       role: 'user',
-      content: `用户原始需求：${prompt}\n\n组长 Mike 的开发说明：\n应用名：${plan.title}\n概述：${plan.summary}\n功能：\n${plan.features.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n设计：${plan.design}\n数据：${plan.data}\n\n现在输出完整 HTML。`,
+      content: `用户原始需求：${prompt}\n\n组长 Mike 的开发说明：\n应用名：${plan.title}\n概述：${plan.summary}\n${plan.views?.length ? `视图：\n${plan.views.map((v, i) => `${i + 1}. ${v}`).join('\n')}\n` : ''}功能：\n${plan.features.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n设计：${plan.design}\n数据：${plan.data}\n\n现在输出完整 HTML。`,
     },
   ];
 }
@@ -162,7 +174,7 @@ export async function engineerBuild({
       onRetry,
       onReset,
       temperature: 0.6 + (variant % 3) * 0.1,
-      maxTokens: 24000,
+      maxTokens: 32000,
     });
     const html = extractHtml(raw);
     lastProblem = htmlProblem(html, needScript);

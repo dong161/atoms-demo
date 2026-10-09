@@ -1,7 +1,7 @@
 // OpenAI 兼容的 Chat Completions 客户端（流式）。
 // 配置全部来自环境变量；没配置时 isConfigured() 为 false，调用方走 mock。
 
-const DEFAULT_TIMEOUT_MS = 180_000;
+const DEFAULT_TIMEOUT_MS = 300_000; // 完整应用约 1-2 万 token，慢模型需要 3-4 分钟
 const IDLE_TIMEOUT_MS = 60_000;
 
 export function llmConfig(env = process.env) {
