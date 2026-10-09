@@ -67,7 +67,7 @@ flowchart LR
   DB --> Store[("Neon Postgres")]
 ```
 
-一次生成的流程：`POST /api/projects` → 服务端创建任务 → Mike 拆解需求 → N 路 Alex 并行生成（SSE 实时推送进度）→ 每路完成后 Mike 对照需求验收 → 浏览器在离屏沙箱里实测打分 → 用户采用 → 生成版本。
+一次生成的流程：`POST /api/projects` → 服务端创建任务 → Mike 拆解需求 → N 路 Alex 并行生成（SSE 实时推送进度）→ 每路完成后 Mike 对照需求验收 → 浏览器在离屏沙箱里实测打分 → 自动采用最高分并生成版本，Mike 在对话里写出结论（可改选）。每一步都记录进对话里的「工作流程」时间线。
 
 ## 技术栈
 
@@ -101,8 +101,10 @@ npm run format:check
 | `DATABASE_URL` | Postgres 连接串；留空用本地 SQLite |
 | `LLM_BASE_URL` | OpenAI 兼容接口地址（到 `/v1`） |
 | `LLM_API_KEY` | 接口密钥（Bearer） |
-| `LLM_MODELS` | 可选模型，逗号分隔；默认赛马阵容按模型健康度自动挑选前 3 个（也可由模型网关上报覆盖） |
+| `LLM_MODELS` | 可选模型，逗号分隔；默认赛马阵容按模型健康度与质量先验自动挑选前 3 个（也可由模型网关上报覆盖） |
 | `LLM_PLANNER_MODEL` | Mike 拆解与验收用的模型，默认取第一个 |
+| `GOOGLE_CLIENT_ID` | Google OAuth Web 客户端 ID；不设置则不显示 Google 登录 |
+| `RACE_GRACE_MS` / `LLM_QUALITY_PRIOR` | 赛马领先后的等待（默认 150 秒）/ 覆盖模型质量先验 |
 | `MOCK_MODE` | 设为 `1` 强制演示模式 |
 
 ## 目录结构
@@ -110,11 +112,13 @@ npm run format:check
 ```text
 server/
   index.js            Express：账号、项目、任务事件流、版本、Remix、发布、应用数据、模型地址上报
-  jobs.js             JobHub（事件序号/回放/任务槽）、赛马调度、采用与版本号分配
+  jobs.js             JobHub（事件序号/回放/任务槽）、赛马调度、工作流程时间线、采用与收尾结论、重启恢复
   agents.js           Mike（拆解/验收）与 Alex（编码）的提示词、解析、截断识别、mock 实现
   llm.js              OpenAI 兼容流式客户端：超时、可取消重试、中断识别
   edit-context.js     点选元素 / 控制台报错等修改上下文（只发给模型）
   generation-options.js  主题与附件
+  model-health.js     模型健康度与质量先验，挑选赛马阵容
+  google-auth.js      Google ID Token 校验
   html.js / db.js     输出清洗与静态检查 / 数据库适配层
   mock/               演示模式模板
 public/
@@ -123,12 +127,13 @@ public/
   js/core.js          基础工具、全局状态、API 请求
   js/auth.js          账号：Google / 邮箱登录注册、头像菜单与账号设置、首次引导
   js/home.js          首页：落地页、输入框、示例、我的项目
-  js/workspace.js     工作区：项目加载、对话、输入框、任务事件流
-  js/preview.js       预览区：应用查看器、Console、点选修改、一键修复
-  js/race.js          赛马对比：候选卡片、缩略图、自动校验打分
-  js/actions.js       项目操作：采用、回退、Remix、下载、发布、版本历史
-  js/sandbox.js       预览宿主：注入运行时、数据同步队列、自动校验评分
-  js/runtime.js       注入生成应用的运行时：localStorage 替身、报错收集、点选、探针
+  js/workspace.js     工作区：项目加载、对话、工作流程时间线、结论卡片、输入框与排队、项目菜单、任务事件流
+  js/preview.js       预览区：应用查看器、预览/代码切换、Console、点选修改、一键修复与自动修复
+  js/race.js          赛马对比：候选卡片、缩略图、自动校验打分、收尾后切换到采用的版本
+  js/actions.js       项目操作：采用、回退、Remix、带数据导出、发布、版本历史
+  js/composer-options.js / generation-presets.js / landing.js  输入框选项、主题与附件规则（前后端共用）、首页素材
+  js/sandbox.js       预览宿主：注入运行时、数据同步队列、自动校验评分、导出 HTML
+  js/runtime.js       注入生成应用的运行时：localStorage 替身、报错收集、点选、探针（含启动遮挡检查）
 ops/model-gateway/    本机模型网关与隧道守护脚本（不含配置与密钥）
 test/                 95 个测试
 docs/                 说明文档、素材来源

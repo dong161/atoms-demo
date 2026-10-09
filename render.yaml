@@ -21,3 +21,5 @@ services:
         sync: false
       - key: LLM_PLANNER_MODEL
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
