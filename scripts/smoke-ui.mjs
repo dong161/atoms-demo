@@ -41,9 +41,20 @@ async function addRecord(app, page, mark) {
   const opener = app.locator('button:visible', { hasText: /新建|添加|新增|\+/ }).first();
   if (await opener.count()) await opener.click({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(800);
-  const dialog = app.locator('[role=dialog]:visible, dialog[open], .modal:visible, .modal-overlay:visible .modal, .drawer:visible').last();
-  const scope = (await dialog.count()) ? dialog : app.locator('form:visible').first().or(app.locator('body'));
-  const inputs = scope.locator('input[type=text]:visible, input:not([type]):visible, textarea:visible');
+  // 只认里面有可见输入框的弹窗：有些应用用透明度隐藏「删除确认」之类的弹窗，Playwright 仍视为可见
+  const TEXT = 'input[type=text]:visible, input:not([type]):visible, textarea:visible';
+  const dialog = app
+    .locator('[role=dialog], dialog[open], .modal, .drawer, [class*=modal], [class*=dialog]')
+    .filter({ has: app.locator(TEXT) })
+    .last();
+  const scope = (await dialog.count())
+    ? dialog
+    : app
+        .locator('form:visible')
+        .filter({ has: app.locator(TEXT) })
+        .first()
+        .or(app.locator('body'));
+  const inputs = scope.locator(TEXT);
   const n = await inputs.count();
   for (let i = 0; i < n; i++)
     await inputs
