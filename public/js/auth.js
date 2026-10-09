@@ -59,8 +59,36 @@ export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
   const close = () => {
     if (!busy) remove();
   };
+  // 登录成功后的统一收尾：保存会话、刷新界面，新用户且没有待提交需求时展示新手引导
+  const finishLogin = async (r, isNew) => {
+    state.token = r.token;
+    state.user = r.user;
+    store.set('atoms.token', r.token);
+    busy = false;
+    remove();
+    await render();
+    toast(`欢迎${isNew ? '' : '回来'}，${r.user.name}`);
+    // 已经写好需求再登录的用户，直接提交需求，不再插入新手引导
+    if (isNew && !afterLogin) showFirstRun();
+    else {
+      if (afterLogin) store.set(`atoms.onboarded.${r.user.id}`, true);
+      afterLogin?.();
+    }
+  };
+  const googleLogin = async (credential) => {
+    if (busy) return;
+    busy = true;
+    $('#auth-error', mask).textContent = '';
+    try {
+      const r = await api('/api/auth/google', { method: 'POST', body: { credential } });
+      await finishLogin(r, r.created);
+    } catch (err) {
+      busy = false;
+      $('#auth-error', mask).textContent = `Google 登录失败：${err.message}`;
+    }
+  };
   const draw = () => {
-    mask.innerHTML = `<div class="auth-shell" role="dialog" aria-modal="true" aria-labelledby="auth-title"><aside class="auth-art"><div class="auth-brand">◎ Atoms <small>DEMO</small></div><div class="auth-orbit">${['mike', 'emma', 'alex'].map((k) => `<img src="${agentAvatars[k]}" alt="${AGENTS[k].name}">`).join('')}</div><h2>一个想法，<br>一整个 AI 团队。</h2><p>从第一句话，到第一个能点击的产品。你的创作之旅，从这里开始。</p><small>独立演示项目 · 非 Atoms 官方账号</small></aside><section class="auth-content"><button class="icon-btn auth-close" id="auth-close" aria-label="关闭登录窗口">✕</button><div class="auth-tabs"><button type="button" data-auth-mode="login" class="${mode === 'login' ? 'active' : ''}">登录</button><button type="button" data-auth-mode="register" class="${mode === 'register' ? 'active' : ''}">注册</button></div><h2 id="auth-title">${{ login: '欢迎回来', register: '开启你的创作之旅', guest: '先体验，再决定', restore: '恢复你的项目' }[mode]}</h2><p>${{ login: '登录后，继续你的项目和创作。', register: '创建账号，让你的想法有一个长期的家。', guest: '只需昵称，无需邮箱。请保存账号恢复码。', restore: '使用之前保存的恢复码，不会新建账号。' }[mode]}</p><form id="auth-form">${mode === 'register' || mode === 'guest' ? '<label for="auth-name">昵称</label><input class="field" id="auth-name" name="nickname" autocomplete="nickname" maxlength="30" required placeholder="怎么称呼你？">' : ''}${mode === 'login' || mode === 'register' ? `<label for="auth-email">邮箱</label><input class="field" id="auth-email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"><label for="auth-password">密码</label><div class="password-field"><input class="field" id="auth-password" type="password" minlength="10" maxlength="128" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required placeholder="至少 10 个字符"><button type="button" id="password-eye" aria-label="显示密码">显示</button></div>` : ''}${mode === 'restore' ? '<label for="auth-code">账号恢复码</label><input class="field" id="auth-code" type="password" autocomplete="off" required placeholder="粘贴恢复码">' : ''}<div class="auth-error" id="auth-error" role="alert"></div><button class="btn primary auth-submit" type="submit">${{ login: '登录并继续', register: '创建账号', guest: '开始体验', restore: '恢复账号' }[mode]} ↗</button></form><div class="auth-alternatives"><button class="link" data-auth-mode="guest">仅用昵称快速体验</button><span>·</span><button class="link" data-auth-mode="restore">用恢复码登录</button></div><p class="auth-disclaimer">邮箱仅作为账号标识，暂不支持邮件验证或邮件找回密码。已有昵称账号请使用恢复码登录。</p></section></div>`;
+    mask.innerHTML = `<div class="auth-shell" role="dialog" aria-modal="true" aria-labelledby="auth-title"><aside class="auth-art"><div class="auth-brand">◎ Atoms <small>DEMO</small></div><div class="auth-orbit">${['mike', 'emma', 'alex'].map((k) => `<img src="${agentAvatars[k]}" alt="${AGENTS[k].name}">`).join('')}</div><h2>一个想法，<br>一整个 AI 团队。</h2><p>从第一句话，到第一个能点击的产品。你的创作之旅，从这里开始。</p><small>独立演示项目 · 非 Atoms 官方账号</small></aside><section class="auth-content"><button class="icon-btn auth-close" id="auth-close" aria-label="关闭登录窗口">✕</button><div class="auth-tabs"><button type="button" data-auth-mode="login" class="${mode === 'login' ? 'active' : ''}">登录</button><button type="button" data-auth-mode="register" class="${mode === 'register' ? 'active' : ''}">注册</button></div><h2 id="auth-title">${{ login: '欢迎回来', register: '开启你的创作之旅', guest: '先体验，再决定', restore: '恢复你的项目' }[mode]}</h2><p>${{ login: '登录后，继续你的项目和创作。', register: '创建账号，让你的想法有一个长期的家。', guest: '只需昵称，无需邮箱。请保存账号恢复码。', restore: '使用之前保存的恢复码，不会新建账号。' }[mode]}</p>${state.config.googleClientId && (mode === 'login' || mode === 'register') ? '<div class="google-login"><div id="google-btn" aria-label="使用 Google 账号登录"></div><div class="auth-divider"><span>或使用邮箱</span></div></div>' : ''}<form id="auth-form">${mode === 'register' || mode === 'guest' ? '<label for="auth-name">昵称</label><input class="field" id="auth-name" name="nickname" autocomplete="nickname" maxlength="30" required placeholder="怎么称呼你？">' : ''}${mode === 'login' || mode === 'register' ? `<label for="auth-email">邮箱</label><input class="field" id="auth-email" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"><label for="auth-password">密码</label><div class="password-field"><input class="field" id="auth-password" type="password" minlength="10" maxlength="128" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required placeholder="至少 10 个字符"><button type="button" id="password-eye" aria-label="显示密码">显示</button></div>` : ''}${mode === 'restore' ? '<label for="auth-code">账号恢复码</label><input class="field" id="auth-code" type="password" autocomplete="off" required placeholder="粘贴恢复码">' : ''}<div class="auth-error" id="auth-error" role="alert"></div><button class="btn primary auth-submit" type="submit">${{ login: '登录并继续', register: '创建账号', guest: '开始体验', restore: '恢复账号' }[mode]} ↗</button></form><div class="auth-alternatives"><button class="link" data-auth-mode="guest">仅用昵称快速体验</button><span>·</span><button class="link" data-auth-mode="restore">用恢复码登录</button></div><p class="auth-disclaimer">邮箱仅作为账号标识，暂不支持邮件验证或邮件找回密码。已有昵称账号请使用恢复码登录。</p></section></div>`;
     $('#auth-close', mask).onclick = close;
     mask.querySelectorAll('[data-auth-mode]').forEach(
       (b) =>
@@ -102,19 +130,7 @@ export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
               ...(mode === 'register' ? { name: $('#auth-name', mask).value.trim() } : {}),
             },
           });
-        state.token = r.token;
-        state.user = r.user;
-        store.set('atoms.token', r.token);
-        busy = false;
-        remove();
-        await render();
-        toast(`欢迎${mode === 'login' || mode === 'restore' ? '回来' : ''}，${r.user.name}`);
-        // 已经写好需求再登录的用户，直接提交需求，不再插入新手引导；空手注册的新用户才展示三步引导
-        if ((mode === 'guest' || mode === 'register') && !afterLogin) showFirstRun();
-        else {
-          if (afterLogin) store.set(`atoms.onboarded.${r.user.id}`, true);
-          afterLogin?.();
-        }
+        await finishLogin(r, mode === 'guest' || mode === 'register');
       } catch (err) {
         state.token = oldToken;
         $('#auth-error', mask).textContent = err.status === 401 ? '邮箱、密码或恢复码不正确' : err.message;
@@ -122,6 +138,8 @@ export function showOnboarding({ afterLogin, mode = 'register' } = {}) {
         buttons.forEach((b) => (b.disabled = false));
       }
     };
+    const gbox = $('#google-btn', mask);
+    if (gbox) renderGoogleButton(gbox, mode, googleLogin, (msg) => ($('#auth-error', mask).textContent = msg));
     const first = mask.querySelector('input');
     first?.focus();
   };
@@ -210,4 +228,43 @@ export function showAccount() {
     mask.remove();
     logout();
   };
+}
+
+// ---------- Google 登录按钮（Google Identity Services） ----------
+let gisLoading = null;
+function loadGis() {
+  gisLoading ||= new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client';
+    sc.async = true;
+    sc.onload = () => resolve(window.google);
+    sc.onerror = () => {
+      gisLoading = null;
+      reject(new Error('无法连接 Google，请检查网络或改用邮箱登录'));
+    };
+    document.head.appendChild(sc);
+  });
+  return gisLoading;
+}
+
+async function renderGoogleButton(el, mode, onCredential, onError) {
+  try {
+    const google = await loadGis();
+    google.accounts.id.initialize({
+      client_id: state.config.googleClientId,
+      callback: (resp) => onCredential(resp.credential),
+      ux_mode: 'popup',
+      context: mode === 'login' ? 'signin' : 'signup',
+    });
+    google.accounts.id.renderButton(el, {
+      theme: 'outline',
+      size: 'large',
+      shape: 'pill',
+      text: mode === 'login' ? 'signin_with' : 'signup_with',
+      locale: 'zh_CN',
+      width: Math.min(el.clientWidth || 360, 400),
+    });
+  } catch (e) {
+    onError(e.message);
+  }
 }

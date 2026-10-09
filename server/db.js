@@ -99,6 +99,8 @@ async function openPg(url) {
   await pool.query(SCHEMA);
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub)');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
   await pool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS theme_id TEXT');
   await pool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS attachments TEXT');
@@ -132,6 +134,8 @@ async function openSqlite(file) {
     .map((c) => c.name);
   if (!columns.includes('email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
   if (!columns.includes('password_hash')) db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+  if (!columns.includes('google_sub')) db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub)');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
   const projectColumns = db
     .prepare('PRAGMA table_info(projects)')

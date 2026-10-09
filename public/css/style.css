@@ -2455,3 +2455,28 @@ details.review li.miss {
 .composer-bar > :last-child {
   margin-left: auto;
 }
+
+/* Google 登录 */
+.google-login {
+  margin: 4px 0 6px;
+}
+#google-btn {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+  color: var(--faint);
+  font-size: 12px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}

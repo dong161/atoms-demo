@@ -8,6 +8,7 @@ import express from 'express';
 import { generationOptions } from './generation-options.js';
 import { parseTarget, parseErrors, editHint } from './edit-context.js';
 import { ModelHealth } from './model-health.js';
+import { verifyGoogleIdToken } from './google-auth.js';
 import { openDb } from './db.js';
 import { llmConfig } from './llm.js';
 import { JobHub, runRace, adoptEntry, createVersion, addMessage, newId } from './jobs.js';
@@ -36,7 +37,14 @@ function rateLimiter(limit, windowMs) {
 const KV_MAX_VALUE = 200_000;
 const KV_MAX_KEYS = 200;
 
-export async function createApp({ db, cfg = llmConfig(), hub = new JobHub(), health = new ModelHealth() } = {}) {
+export async function createApp({
+  db,
+  cfg = llmConfig(),
+  hub = new JobHub(),
+  health = new ModelHealth(),
+  googleClientId = process.env.GOOGLE_CLIENT_ID || '',
+  verifyGoogle = (token) => verifyGoogleIdToken(token, googleClientId),
+} = {}) {
   cfg.health = health;
   db ??= await openDb();
   // 进程重启后，内存里的任务都没了：把残留的 running 标记为失败，避免界面永远转圈
@@ -142,6 +150,7 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub(), hea
       defaultRace: cfg.mockOnly ? ['mock', 'mock'] : health.rank(cfg.models).slice(0, 3),
       health: cfg.mockOnly ? [] : health.snapshot(cfg.models),
       maxModels: MAX_MODELS,
+      googleClientId: googleClientId || null,
     });
   });
 
@@ -221,6 +230,43 @@ export async function createApp({ db, cfg = llmConfig(), hub = new JobHub(), hea
         Date.now() + 7 * 86400_000,
       ]);
       res.json({ user: { id: user.id, name: user.name, email: user.email }, token });
+    }),
+  );
+
+  // Google 登录：同一 Google 账号固定对应一个用户；邮箱与已有邮箱账号相同则自动关联
+  app.post(
+    '/api/auth/google',
+    wrap(async (req, res) => {
+      if (!loginLimit(req.ip)) return tooMany(res, '登录尝试过多，请一小时后再试');
+      if (!googleClientId) return res.status(501).json({ error: '本站未开启 Google 登录' });
+      const g = await verifyGoogle(req.body?.credential);
+      let user = await db.get('SELECT id, name, email FROM users WHERE google_sub = $1', [g.sub]);
+      if (!user && g.email) {
+        user = await db.get('SELECT id, name, email FROM users WHERE email = $1', [g.email]);
+        if (user) await db.run('UPDATE users SET google_sub = $1 WHERE id = $2', [g.sub, user.id]);
+      }
+      let created = false;
+      if (!user) {
+        created = true;
+        user = { id: newId(), name: g.name, email: g.email || null };
+        // 令牌列是必填的历史字段：给一个不会被使用的随机值（登录走 sessions 表）
+        await db.run('INSERT INTO users (id, name, token, created_at, email, google_sub) VALUES ($1,$2,$3,$4,$5,$6)', [
+          user.id,
+          user.name,
+          hashToken(crypto.randomBytes(24).toString('base64url')),
+          Date.now(),
+          user.email,
+          g.sub,
+        ]);
+      }
+      const token = crypto.randomBytes(24).toString('base64url');
+      await db.run('DELETE FROM sessions WHERE expires_at <= $1', [Date.now()]);
+      await db.run('INSERT INTO sessions (token,user_id,expires_at) VALUES ($1,$2,$3)', [
+        hashToken(token),
+        user.id,
+        Date.now() + 7 * 86400_000,
+      ]);
+      res.json({ user, token, created });
     }),
   );
 
