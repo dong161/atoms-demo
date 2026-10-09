@@ -22,7 +22,7 @@ async function ok(url, opts = {}, timeout = 20000) {
 // 主力阵容：Claude、Gemini、GPT 三家，每家按顺序取第一个可用的子模型（第一个也是 Mike 规划/验收的首选）。
 // 某家整体不可用时，先用 Gemini 的其它子模型补位，最后才用 grok 等其它模型，凑满 3 路；恢复后下一轮巡检自动换回。
 const FAMILIES = [
-  ['claude-sonnet-4-6', 'claude-opus-4-6-thinking'],
+  ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-opus-4-6-thinking'],
   [
     'gemini-3.8-flash-high',
     'gemini-3.8-flash-high-1',
@@ -31,7 +31,7 @@ const FAMILIES = [
     'gemini-3.1-pro-low',
     'gemini-3-flash',
   ],
-  ['gpt-oss-120b-medium'],
+  ['gpt-5.5', 'gpt-6-sol', 'gpt-oss-120b-medium'],
 ];
 const FILL_ORDER = [/gemini/i, /claude/i, /gpt/i, /./];
 function pickLineup(alive) {

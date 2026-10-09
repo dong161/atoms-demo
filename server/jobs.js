@@ -3,7 +3,7 @@
 // 浏览器刷新或断开不会中断任务，重新打开项目会自动续上进度。
 import crypto from 'node:crypto';
 import { referencePrompt } from './generation-options.js';
-import { planProject, engineerBuild, reviewBuild, reviewChecklist } from './agents.js';
+import { planProject, planEdit, engineerBuild, reviewBuild, reviewChecklist } from './agents.js';
 import { staticCheck, titleFromHtml } from './html.js';
 
 export const newId = () => crypto.randomUUID();
@@ -124,11 +124,12 @@ async function insertVersion(db, { projectId, html, model, source, score, scoreD
 export function createWorkflow({ db, emit, projectId }) {
   let msg = null;
   const steps = [];
+  const extra = {};
   let chain = Promise.resolve();
   const persist = () =>
     (chain = chain
       .then(async () => {
-        const meta = { steps };
+        const meta = { ...extra, steps };
         if (!msg) {
           msg = await addMessage(db, projectId, 'system', 'workflow', '工作流程', meta);
           emit('message', { message: msg });
@@ -148,6 +149,11 @@ export function createWorkflow({ db, emit, projectId }) {
     update(id, patch) {
       if (!steps[id]) return;
       Object.assign(steps[id], patch);
+      persist();
+    },
+    /** 给时间线附加标识（例如所属赛马 raceId），收尾结论时据此找到它 */
+    tag(obj) {
+      Object.assign(extra, obj);
       persist();
     },
     /** 任务异常结束时，把还在进行中的步骤标记为中断 */
@@ -278,6 +284,28 @@ export async function concludeRace(db, raceId) {
       ? `下一步：直接在下方告诉 Alex「补上：${unmet[0]}」，或点工具栏「选择元素」只改某一处。`
       : '下一步：在预览里试用，想改哪里直接在下方输入，或点「选择元素」只改某一处。',
   ].filter(Boolean);
+  // 时间线收尾：把「等你试用后选择」那一步换成最终结果，并标记打分完成
+  const wfRow = await db.get("SELECT id, meta FROM messages WHERE project_id = $1 AND kind = 'workflow' AND meta LIKE $2", [
+    race.project_id,
+    `%"raceId":"${raceId}"%`,
+  ]);
+  if (wfRow) {
+    try {
+      const meta = JSON.parse(wfRow.meta);
+      meta.steps = (meta.steps || []).filter((st) => st.action !== 'review');
+      meta.steps.push({
+        id: meta.steps.length,
+        at: now(),
+        status: 'done',
+        agent: 'mike',
+        action: 'version',
+        label: `打分完成：采用 ${name(adopted.model)}（${adopted.score} 分）${version ? `，存为 Version ${version.seq}` : ''}`,
+      });
+      await db.run('UPDATE messages SET meta = $1 WHERE id = $2', [JSON.stringify(meta), wfRow.id]);
+    } catch {
+      /* 时间线收尾失败不影响结论 */
+    }
+  }
   const summary = await addMessage(db, race.project_id, 'mike', 'summary', lines.join('\n'), {
     raceId,
     adoptedEntryId: adopted.id,
@@ -330,7 +358,8 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
   const prompt = referencePrompt(project.prompt, files);
   // 附件只发给模型；对话消息、赛马标题和验收清单保留用户的原话
   // hint：点选元素、控制台报错等附加上下文，同样只发给模型
-  const modelInstruction = referencePrompt(instruction + hint, files);
+  let modelInstruction = referencePrompt(instruction + hint, files);
+  let editChanges = null;
   const signal = job.ctrl.signal;
   const emit = (type, data) => hub.emit(job, type, data);
   const say = async (role, kind, content, meta) => {
@@ -378,11 +407,33 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
       flow.add({ agent: 'alex', action: 'read', label: '读取文件', target: 'index.html', detail: `当前版本 · ${lines(baseHtml)} 行` });
       if (hint)
         flow.add({ agent: 'alex', action: 'read', label: '读取修改上下文', detail: /报错|错误/.test(hint) ? '控制台报错' : '选中的元素' });
+      // 修复报错的轮次直接交给 Alex；其它修改先由 Mike 拆成具体改动点，作为 Alex 的方案和这轮的验收清单
+      if (!/报错|错误/.test(hint)) {
+        emit('status', { agent: 'mike', text: 'Mike 正在拆解修改要求…' });
+        const step = flow.add({ agent: 'mike', action: 'think', label: '拆解修改要求', status: 'running' });
+        const started = now();
+        const editPlan = await planEdit({ cfg, appPlan: plan, instruction, signal });
+        editChanges = editPlan.changes;
+        flow.update(step, {
+          status: 'done',
+          action: 'write',
+          label: '写入修改方案',
+          detail: `${editChanges.length} 处改动 · ${secs(now() - started)}${editPlan.source === 'fallback' ? ' · 规划失败，按原话修改' : ''}`,
+        });
+        if (editPlan.source !== 'fallback' && editPlan.source !== 'mock') {
+          await say('mike', 'edit-plan', editPlan.summary, { editPlan });
+          modelInstruction = referencePrompt(
+            `${instruction}\n\n组长 Mike 的修改方案（逐条完成，其它功能和数据保持不变）：\n${editChanges.map((c, i) => `${i + 1}. ${c}`).join('\n')}${hint}`,
+            files,
+          );
+        }
+      }
     }
 
     const lineup = models.length ? models : ['mock'];
     const raceId = newId();
     const raceStarted = now();
+    flow.tag({ raceId });
     await db.run('INSERT INTO races (id, project_id, instruction, base_version_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [
       raceId,
       project.id,
@@ -438,6 +489,7 @@ export async function runRace({ db, hub, cfg, job, project, instruction, hint = 
         baseHtml,
         instruction: modelInstruction,
         reviewInstruction: instruction,
+        changes: editChanges,
         themeId,
       };
       let r = await buildEntry({ ...args, entry: e });
@@ -564,6 +616,7 @@ async function buildEntry({
   baseHtml,
   instruction,
   reviewInstruction = instruction,
+  changes = null,
   themeId,
 }) {
   const started = now();
@@ -623,7 +676,7 @@ async function buildEntry({
     const review = await reviewBuild({
       cfg: source === 'mock' ? { ...cfg, mockOnly: true } : cfg,
       html,
-      checklist: reviewChecklist({ mode, plan, instruction: reviewInstruction }),
+      checklist: reviewChecklist({ mode, plan, instruction: reviewInstruction, changes }),
       signal,
     });
     const passed = (review?.results || []).filter((r) => r.ok).length;

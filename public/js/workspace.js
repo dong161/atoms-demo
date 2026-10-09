@@ -307,6 +307,10 @@ export function renderMessage(m) {
   }
   const who = AGENTS[m.role] || AGENTS.system;
   const head = `<div class="who"><b>${who.name}</b>${who.role ? ` · ${who.role}` : ''} · ${fmtTime(m.created_at)}</div>`;
+  if (m.kind === 'edit-plan' && m.meta?.editPlan) {
+    const ep = m.meta.editPlan;
+    return `<div class="msg">${avatar(m.role)}<div class="body">${head}<div class="bubble plan-card"><h4>📝 修改方案</h4>${esc(ep.summary)}<ul>${ep.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><div class="kv"><span class="badge">由 ${esc(modelLabel(ep.source))} 拆解 · 也是这一轮的验收清单</span></div></div></div></div>`;
+  }
   if (m.kind === 'plan' && m.meta?.plan) {
     const p = m.meta.plan;
     return `<div class="msg">${avatar(m.role)}<div class="body">${head}

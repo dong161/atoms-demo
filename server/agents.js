@@ -69,6 +69,46 @@ export async function planProject({ cfg, prompt, signal, onDelta }) {
   return { ...mockPlan(prompt), source: 'mock' };
 }
 
+// ---------------- Mike：修改方案 ----------------
+
+const EDIT_PLANNER_SYSTEM = `你是 Atoms 团队的组长 Mike（资深产品经理）。用户对一个已经上线的网页应用提出了修改要求。
+把这句要求拆成交给工程师 Alex 的修改方案，只输出 JSON，不要任何其它文字：
+{"summary":"一句话说明这次要改成什么样","changes":["具体改动1","具体改动2","..."]}
+要求：changes 3-6 条，每条具体、可以在页面上验证（写清改哪个区域、改成什么样、交互如何变化）；
+只覆盖本次要求，不要扩展无关功能；技术边界不变（纯前端单文件、localStorage、不引入外部资源）；用和用户相同的语言。`;
+
+/** 修改轮先由 Mike 把一句话要求拆成具体改动点；失败时退回「原话即唯一改动点」，不阻塞修改 */
+export async function planEdit({ cfg, appPlan, instruction, signal }) {
+  const fallback = { summary: instruction, changes: [instruction], source: 'fallback' };
+  if (cfg.mockOnly) return { ...fallback, source: 'mock' };
+  try {
+    return await withPlannerFallback(cfg, signal, async (model) => {
+      const raw = await streamChatWithRetry({
+        cfg,
+        model,
+        signal,
+        temperature: 0.3,
+        maxTokens: 1200,
+        messages: [
+          { role: 'system', content: EDIT_PLANNER_SYSTEM },
+          {
+            role: 'user',
+            content: `应用：${appPlan?.title || ''}\n已有功能：\n${(appPlan?.features || []).map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n修改要求：${instruction}`,
+          },
+        ],
+      });
+      const m = String(raw).match(/\{[\s\S]*\}/);
+      const j = m ? JSON.parse(m[0]) : null;
+      const changes = Array.isArray(j?.changes) ? j.changes.map(String).filter(Boolean).slice(0, 6) : [];
+      if (!changes.length) throw new Error('修改方案无法解析');
+      return { summary: String(j.summary || instruction).slice(0, 200), changes, source: model };
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return fallback;
+  }
+}
+
 export function parsePlan(raw) {
   const m = String(raw).match(/\{[\s\S]*\}/);
   if (!m) return null;
@@ -203,9 +243,12 @@ const REVIEW_SYSTEM = `你是 Atoms 团队的组长 Mike，负责验收工程师
 results 的顺序和数量必须与需求清单完全一致。用中文回答。`;
 
 /** 需求清单：首轮用 Mike 的功能列表；修改时把本次修改要求放在第一条。 */
-export function reviewChecklist({ mode, plan, instruction }) {
+export function reviewChecklist({ mode, plan, instruction, changes }) {
   const base = plan?.features?.length ? plan.features : [];
-  return mode === 'edit' ? [`本次修改：${instruction}`, ...base].slice(0, 8) : base.slice(0, 8);
+  if (mode !== 'edit') return base.slice(0, 8);
+  // 修改轮：先逐条验收本次改动点，再抽查原有功能没有被改坏
+  const edits = changes?.length ? changes.map((c) => `本次修改：${c}`) : [`本次修改：${instruction}`];
+  return [...edits, ...base].slice(0, 8);
 }
 
 /**
