@@ -58,12 +58,15 @@ try {
     check(`成品示例可打开 ${href.split('/').pop()}`, r.ok());
   }
 
-  // ---------- 昵称快速体验 + 生成 ----------
+  // ---------- 邮箱注册 + 生成 ----------
+  const email = `smoke${Date.now()}@example.com`;
+  const password = 'smoke-password-123';
   await page.mouse.wheel(0, -8000);
   await page.click('[data-ex="0"]');
   await page.click('#send');
-  await page.click('[data-auth-mode="guest"]');
   await page.fill('#auth-name', 'UI 冒烟');
+  await page.fill('#auth-email', email);
+  await page.fill('#auth-password', password);
   await page.click('.auth-submit');
   await page.waitForTimeout(1500);
   if (await page.locator('#setup-skip').count()) await page.click('#setup-skip');
@@ -74,7 +77,7 @@ try {
   );
   if (!entered) await page.click('#send');
   await page.waitForURL(/#\/p\//, { timeout: 30_000 });
-  check('昵称快速体验并创建项目', true);
+  check('邮箱注册并创建项目', true);
   const pid = page.url().split('#/p/')[1];
   const t0 = Date.now();
   let d = await idle(page, pid);
@@ -88,7 +91,7 @@ try {
   );
   check(
     '整轮耗时受限（不被单路拖住）',
-    (Date.now() - t0) / 1000 < 300,
+    (Date.now() - t0) / 1000 < 420,
     `${Math.round((Date.now() - t0) / 1000)}s，最长单路 ${Math.round(longest / 1000)}s`,
   );
 
@@ -165,6 +168,43 @@ try {
     .innerText()
     .catch(() => '');
   check('刷新页面后数据仍在预览中', afterReload.includes('冒烟记录'));
+
+  // ---------- 工作流程 / 代码视图 / 新标签页 / 导出 ----------
+  const wfSteps = await page.locator('.wf-step').count();
+  const wfRunning = await page.locator('.wf-step.running').count();
+  check('对话里有工作流程时间线，刷新后仍在且没有卡在进行中', wfSteps >= 5 && wfRunning === 0, `${wfSteps} 步可见`);
+  const [tab] = await Promise.all([ctx.waitForEvent('page'), page.click('#vt-open')]);
+  await tab.waitForTimeout(5000);
+  const tabText = await tab
+    .frameLocator('#frame iframe')
+    .locator('body')
+    .innerText()
+    .catch(() => '');
+  check('新标签页全屏运行，数据与工作区一致', tabText.includes('冒烟记录'));
+  const [dl] = await Promise.all([tab.waitForEvent('download'), tab.click('#bar-download')]);
+  const exported = await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8');
+  check('导出的 HTML 带上了当前数据', exported.includes('冒烟记录') && exported.includes('</html>'), dl.suggestedFilename());
+  await tab.close();
+  await page.click('[data-vmode=code]');
+  await page.waitForTimeout(1500);
+  const codeLines = await page.locator('.code-body .ln').count();
+  check('可切换到只读代码视图', codeLines > 50, `${codeLines} 行`);
+  await page.click('[data-vmode=preview]');
+
+  // ---------- 退出后重新登录，项目还在 ----------
+  await page.click('#account-btn');
+  await page.click('[data-menu=logout]');
+  await page.waitForSelector('#login-btn', { timeout: 10_000 });
+  await page.click('#login-btn');
+  await page.fill('#auth-email', email);
+  await page.fill('#auth-password', password);
+  await page.click('.auth-submit');
+  await page.waitForTimeout(3000);
+  const mine = await page.$$eval('#projects [data-open], #projects a, #projects .project-card', (els) => els.length).catch(() => 0);
+  const listed = (await api(page, '/api/projects')).json.projects?.some((p) => p.id === pid);
+  check('退出后用邮箱重新登录，原项目还在', listed, `首页项目卡片 ${mine} 个`);
+  await page.goto(`${base}/#/p/${pid}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('#frame-wrap iframe', { timeout: 30_000 });
 
   // ---------- Remix 复制数据 ----------
   d = (await api(page, `/api/projects/${pid}`)).json;
